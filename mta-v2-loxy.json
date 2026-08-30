@@ -1,0 +1,72 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-08-30T11:40:40-03:00",
+    "name": "MTA | Loxy v2",
+    "author": "danielolxlol@gmail.com",
+    "description": "Egg MTA modernizada para Pterodactyl com runtime oficial ghcr.io/ptero-eggs/games:mta, startup remoto da Loxy Systems, instalacao segura que preserva arquivos existentes e suporte opcional ao acelerador de downloads via EXPRESS_PORT.",
+    "features": [],
+    "docker_images": {
+        "MTA Ubuntu 22.04": "ghcr.io/ptero-eggs/games:mta"
+    },
+    "file_denylist": [],
+    "startup": "bash <(curl -fsSL --retry 3 --retry-delay 2 https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/mta.sh)",
+    "config": {
+        "files": "{}",
+        "startup": "{\n    \"done\": \"Server started and is ready to accept connections\"\n}",
+        "logs": "{}",
+        "stop": "shutdown"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\nset -Eeuo pipefail\n\nexport DEBIAN_FRONTEND=noninteractive\n\nSERVER_DIR=\"/mnt/server\"\nTMP_DIR=\"${SERVER_DIR}/.loxy-mta-install\"\n\ncleanup() {\n    rm -rf \"${TMP_DIR}\"\n}\ntrap cleanup EXIT\n\nrm -rf \"${TMP_DIR}\"\nmkdir -p \"${TMP_DIR}\" \"${SERVER_DIR}\"\n\necho \"==================================================\"\necho \"        MTA Installer - Loxy Systems v2\"\necho \"==================================================\"\n\necho \"[1/6] Preparando dependencias do instalador...\"\napt-get update\napt-get install -y --no-install-recommends \\\n    ca-certificates \\\n    curl \\\n    tar \\\n    unzip\nrm -rf /var/lib/apt/lists/*\n\ncd \"${TMP_DIR}\"\n\necho \"[2/6] Baixando MTA Server...\"\ncurl -fL --retry 5 --retry-delay 2 \\\n    -o multitheftauto_linux_x64.tar.gz \\\n    \"https://linux.multitheftauto.com/dl/multitheftauto_linux_x64.tar.gz\"\n\necho \"[3/6] Baixando configuracao base...\"\ncurl -fL --retry 5 --retry-delay 2 \\\n    -o mta-baseconfig.tar.gz \\\n    \"https://linux.multitheftauto.com/dl/baseconfig.tar.gz\"\n\necho \"[4/6] Baixando resources oficiais...\"\ncurl -fL --retry 5 --retry-delay 2 \\\n    -o mtasa-resources-latest.zip \\\n    \"https://mirror.multitheftauto.com/mtasa/resources/mtasa-resources-latest.zip\"\n\necho \"[5/6] Extraindo e instalando sem sobrescrever arquivos existentes...\"\n\nmkdir -p \"${TMP_DIR}/server-extract\" \"${TMP_DIR}/config-extract\"\n\ntar -xzf multitheftauto_linux_x64.tar.gz -C \"${TMP_DIR}/server-extract\"\n\nMTA_BINARY=\"$(find \"${TMP_DIR}/server-extract\" -type f -name mta-server64 -print -quit || true)\"\nif [[ -z \"${MTA_BINARY}\" ]]; then\n    echo \"[ERRO] Pacote do MTA nao contem mta-server64.\"\n    exit 1\nfi\n\nMTA_ROOT=\"$(dirname \"${MTA_BINARY}\")\"\ncp -a -n \"${MTA_ROOT}/.\" \"${SERVER_DIR}/\"\n\nmkdir -p \"${SERVER_DIR}/mods/deathmatch/resources\"\n\n# Resources: preserva arquivos existentes do cliente.\nunzip -nq mtasa-resources-latest.zip -d \"${SERVER_DIR}/mods/deathmatch/resources\" || true\n\ntar -xzf mta-baseconfig.tar.gz -C \"${TMP_DIR}/config-extract\"\n\nif [[ -d \"${TMP_DIR}/config-extract/baseconfig\" ]]; then\n    cp -a -n \"${TMP_DIR}/config-extract/baseconfig/.\" \"${SERVER_DIR}/mods/deathmatch/\"\nelse\n    BASE_ROOT=\"$(find \"${TMP_DIR}/config-extract\" -type f -name mtaserver.conf -print -quit || true)\"\n    if [[ -n \"${BASE_ROOT}\" ]]; then\n        cp -a -n \"$(dirname \"${BASE_ROOT}\")/.\" \"${SERVER_DIR}/mods/deathmatch/\"\n    fi\nfi\n\n# Compatibilidade com builds/recursos antigos que ainda esperam essa biblioteca.\nif [[ ! -f \"${SERVER_DIR}/x64/libmysqlclient.so.16\" ]]; then\n    echo \"[MYSQL] libmysqlclient.so.16 ausente. Tentando baixar compatibilidade...\"\n    curl -fL --retry 3 --retry-delay 2 \\\n        \"https://nightly.mtasa.com/files/libmysqlclient.so.16\" \\\n        -o \"${SERVER_DIR}/x64/libmysqlclient.so.16\" \\\n        || rm -f \"${SERVER_DIR}/x64/libmysqlclient.so.16\"\nfi\n\necho \"[6/6] Ajustando permissoes...\"\n\nchmod 755 \"${SERVER_DIR}/mta-server64\"\n[[ -f \"${SERVER_DIR}/mta-server\" ]] && chmod 755 \"${SERVER_DIR}/mta-server\"\n[[ -f \"${SERVER_DIR}/mta-accelerator\" ]] && chmod 755 \"${SERVER_DIR}/mta-accelerator\"\n\nfind \"${SERVER_DIR}\" -maxdepth 2 -type f -name \"*.so*\" -exec chmod 644 {} \\; 2>/dev/null || true\n\necho \"==================================================\"\necho \" Instalacao concluida.\"\necho \" Runtime: ghcr.io/ptero-eggs/games:mta\"\necho \" Startup remoto: LoxyHosting/loxy-game-eggs/mta.sh\"\necho \" Arquivos existentes do cliente foram preservados.\"\necho \"==================================================\"\n",
+            "container": "ghcr.io/ptero-eggs/installers:ubuntu",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Nome do Servidor",
+            "description": "Nome exibido na lista de servidores MTA. Deixe vazio para manter o nome existente no mtaserver.conf.",
+            "env_variable": "SERVER_NAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Máximo de jogadores",
+            "description": "Quantidade maxima de jogadores permitida pelo servidor.",
+            "env_variable": "MAX_PLAYERS",
+            "default_value": "10",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|integer|between:1,4096",
+            "field_type": "text"
+        },
+        {
+            "name": "HTTP Mta",
+            "description": "Porta HTTP do MTA usada para transferencia de recursos. Deve existir como allocation adicional.",
+            "env_variable": "HTTP_PORT",
+            "default_value": "20005",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|integer|between:1,65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Acelerador Porta",
+            "description": "Porta opcional do acelerador de downloads. Deixe vazio para desativar.",
+            "env_variable": "EXPRESS_PORT",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "nullable|integer|between:1,65535",
+            "field_type": "text"
+        }
+    ]
+}
