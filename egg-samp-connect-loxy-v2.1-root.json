@@ -1,0 +1,122 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-08-30T10:10:40-03:00",
+    "name": "SA-MP Connect | Loxy v2.1",
+    "author": "smpnode@smpnode.qzz.io",
+    "description": "SA-MP Connect modernizado para Pterodactyl. Runtime Debian 12/Bookworm ghcr.io/ptero-eggs/games:samp com bibliotecas 32-bit/legadas, startup remoto hospedado na raiz do repositório LoxyHosting/loxy-game-eggs e suporte opcional ao SA-MP Voice sem sobrescrever arquivos do cliente.",
+    "features": [],
+    "docker_images": {
+        "SA-MP - Debian 12 + i386 (Recomendado)": "ghcr.io/ptero-eggs/games:samp"
+    },
+    "file_denylist": [],
+    "startup": "bash <(curl -fsSL --retry 3 --retry-delay 2 https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/samp-start-v2.sh)",
+    "config": {
+        "files": "{\n    \"server.cfg\": {\n        \"parser\": \"file\",\n        \"find\": {\n            \"Note\": \"Note: To change some values go to startup, and change it!\",\n            \"Notas\": \"Notas: Para alterar alguns valores va para startup, e altere la!\",\n            \"port\": \"port {{server.build.default.port}}\",\n            \"maxplayers\": \"maxplayers {{server.build.env.MAX_PLAYERS}}\",\n            \"hostname\": \"hostname {{server.build.env.HOST_NAME}}\",\n            \"announce\": \"announce {{server.build.env.ANNONCE}}\",\n            \"weburl\": \"weburl {{server.build.env.WEB_URL}}\",\n            \"maxnpc\": \"maxnpc {{server.build.env.MAX_NPC}}\",\n            \"query\": \"query {{server.build.env.QUERY}}\",\n            \"rcon_password\": \"rcon_password {{server.build.env.PASSWORD}}\"\n        }\n    }\n}",
+        "startup": "{\n    \"done\": \"Started server on \",\n    \"userInteraction\": []\n}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\nset -Eeuo pipefail\n\nexport DEBIAN_FRONTEND=noninteractive\n\nSERVER_DIR=\"/mnt/server\"\nTMP_DIR=\"$(mktemp -d)\"\ntrap 'rm -rf \"${TMP_DIR}\"' EXIT\n\nPRIMARY_URL=\"https://sampcenter.com/download/server/linux/0.3.7.tar.gz\"\nFALLBACK_URL=\"https://github.com/drysius/Eggs/raw/main/Connect/SAMP/server/samp037svr_R2-1.tar.gz\"\nVOICE_URL=\"https://github.com/drysius/Eggs/releases/latest/download/sampvoice.so\"\n\necho \"==================================================\"\necho \"       SA-MP Connect - Loxy v2 Installer\"\necho \"==================================================\"\n\necho \"[1/6] Preparando instalador...\"\napt-get update\napt-get install -y --no-install-recommends \\\n    ca-certificates \\\n    curl \\\n    tar \\\n    gzip \\\n    file \\\n    coreutils\nrm -rf /var/lib/apt/lists/*\n\nmkdir -p \"${SERVER_DIR}\"\nmkdir -p \"${TMP_DIR}/extract\"\n\necho \"[2/6] Baixando SA-MP 0.3.7...\"\nif ! curl -fL --retry 4 --retry-delay 2 \\\n    -o \"${TMP_DIR}/samp.tar.gz\" \"${PRIMARY_URL}\"; then\n    echo \"[AVISO] Fonte principal indisponivel. Usando fallback Loxy/Drysius...\"\n    curl -fL --retry 4 --retry-delay 2 \\\n        -o \"${TMP_DIR}/samp.tar.gz\" \"${FALLBACK_URL}\"\nfi\n\necho \"[3/6] Extraindo pacote...\"\ntar -xzf \"${TMP_DIR}/samp.tar.gz\" -C \"${TMP_DIR}/extract\"\n\nSAMP_BINARY=\"$(find \"${TMP_DIR}/extract\" -type f -name samp03svr -print -quit || true)\"\nif [[ -z \"${SAMP_BINARY}\" ]]; then\n    echo \"[ERRO] O pacote baixado nao contem samp03svr.\"\n    exit 1\nfi\n\nSAMP_ROOT=\"$(dirname \"${SAMP_BINARY}\")\"\n\necho \"[4/6] Instalando apenas arquivos ausentes...\"\n# -n evita sobrescrever gamemodes, plugins, server.cfg e binarios existentes.\ncp -a -n \"${SAMP_ROOT}/.\" \"${SERVER_DIR}/\"\n\nif [[ ! -f \"${SERVER_DIR}/samp03svr\" ]]; then\n    echo \"[ERRO] samp03svr nao foi instalado.\"\n    exit 1\nfi\n\nchmod 755 \"${SERVER_DIR}/samp03svr\"\n[[ -f \"${SERVER_DIR}/samp-npc\" ]] && chmod 755 \"${SERVER_DIR}/samp-npc\"\n[[ -f \"${SERVER_DIR}/announce\" ]] && chmod 755 \"${SERVER_DIR}/announce\"\n\necho \"[5/6] Preparando configuracao...\"\n\nif [[ ! -f \"${SERVER_DIR}/server.cfg\" ]]; then\n    echo \"[ERRO] server.cfg nao foi encontrado no pacote.\"\n    exit 1\nfi\n\n# Só adiciona diretivas que estiverem realmente ausentes.\nif ! grep -Eq '^[[:space:]]*rcon_password[[:space:]]+' \"${SERVER_DIR}/server.cfg\"; then\n    echo \"rcon_password ${PASSWORD:-AlgumaCoisa}\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nif ! grep -Eq '^[[:space:]]*output[[:space:]]+' \"${SERVER_DIR}/server.cfg\"; then\n    echo \"output 1\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nif ! grep -Fq \"Note To change some values go to startup\" \"${SERVER_DIR}/server.cfg\"; then\n    echo \"Note To change some values go to startup, and change it!\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nif ! grep -Fq \"Notas Para alterar alguns valores va para startup\" \"${SERVER_DIR}/server.cfg\"; then\n    echo \"Notas Para alterar alguns valores va para startup, e altere la!\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nmkdir -p \"${SERVER_DIR}/plugins\"\n\n# Se o Voice estiver habilitado durante uma instalação/reinstalação,\n# baixa somente quando o arquivo não existe. Nunca substitui plugin do cliente.\nif [[ \"${SAMP_VOIP:-0}\" == \"1\" && ! -s \"${SERVER_DIR}/plugins/sampvoice.so\" ]]; then\n    echo \"[VOICE] Baixando sampvoice.so...\"\n    if curl -fL --retry 3 --retry-delay 2 \\\n        -o \"${SERVER_DIR}/plugins/sampvoice.so\" \"${VOICE_URL}\"; then\n        chmod 755 \"${SERVER_DIR}/plugins/sampvoice.so\"\n    else\n        echo \"[AVISO] Nao foi possivel baixar sampvoice.so. O SA-MP ainda podera iniciar.\"\n        rm -f \"${SERVER_DIR}/plugins/sampvoice.so\"\n    fi\nfi\n\necho \"[6/6] Finalizando instalacao...\"\n\nfind \"${SERVER_DIR}/plugins\" -maxdepth 1 -type f -name \"*.so\" -exec chmod 755 {} \\; 2>/dev/null || true\n\necho \"==================================================\"\necho \" Instalacao concluida.\"\necho \" Runtime: ghcr.io/ptero-eggs/games:samp\"\necho \" Startup remoto: LoxyHosting/loxy-game-eggs/samp/v2/start.sh\"\necho \" Arquivos existentes do cliente foram preservados.\"\necho \"==================================================\"\n",
+            "container": "ghcr.io/ptero-eggs/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Nome Do Servidor",
+            "description": "Define um Nome para o Servidor, o nome será visto pelos jogadores.",
+            "env_variable": "HOST_NAME",
+            "default_value": "Servidor SA-MP Connect",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Maximo de Jogadores",
+            "description": "A quantidade máxima de jogadores que seu servidor pode conter. Ao alterar esse número, você pode alterar quantos jogadores podem entrar no servidor.",
+            "env_variable": "MAX_PLAYERS",
+            "default_value": "50",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|integer|between:1,1000",
+            "field_type": "text"
+        },
+        {
+            "name": "Maximo de Npcs",
+            "description": "A quantidade máxima de Npcs que seu servidor pode conter. Ao alterar esse número, você altera quantos slots de jogador podem ser usados ​​pelos Npcs.",
+            "env_variable": "MAX_NPC",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|between:0,1000",
+            "field_type": "text"
+        },
+        {
+            "name": "Link do Site",
+            "description": "Isto define o Link que irá aparecer nas informações do Servidor, usuários do SA-MP poderão visualizar.",
+            "env_variable": "WEB_URL",
+            "default_value": "www.sa-mp.com",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Anunciar Servidor",
+            "description": "Alterna se o servidor deve ser anunciado para a lista principal do SA-MP.",
+            "env_variable": "ANNONCE",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Visão das Informações do Servidor",
+            "description": "Alterna se as informações do servidor devem ser exibidas no navegador do servidor. Os jogadores ainda podem entrar em um servidor que desativou a consulta, mas o navegador do servidor não exibirá nenhuma informação.",
+            "env_variable": "QUERY",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Senha do Rcon",
+            "description": "Senha RCON do servidor. Use uma senha forte e nao compartilhe. A Egg aplica este valor ao server.cfg pelo Pterodactyl.",
+            "env_variable": "PASSWORD",
+            "default_value": "AlgumaCoisa",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Samp Voip Beta | Desativar / Ativar",
+            "description": "Ativa o suporte gerenciado ao SA-MP Voice. Quando ativado, a Egg baixa sampvoice.so apenas se ele estiver ausente, sem substituir plugins existentes do cliente.",
+            "env_variable": "SAMP_VOIP",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|numeric|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Porta do Voip Beta | Segunda Porta",
+            "description": "Porta secundaria do SA-MP Voice. Defina uma allocation adicional no Pterodactyl e use a mesma porta aqui. Use 0 quando o Voice estiver desativado.",
+            "env_variable": "VOIP_PORT",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|integer|between:0,65535",
+            "field_type": "text"
+        }
+    ]
+}
