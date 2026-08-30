@@ -1,0 +1,92 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-08-30T11:42:08-03:00",
+    "name": "Minecraft | Loxy v2",
+    "author": "parker@pterodactyl.io",
+    "description": "Egg Minecraft Java universal da Loxy Systems, preparada para versões legadas e atuais. Suporta múltiplas versões do Java, instalação Paper com fallback Vanilla oficial e startup remoto com otimização automática de memória/JVM.",
+    "features": [
+        "eula",
+        "java_version",
+        "pid_limit"
+    ],
+    "docker_images": {
+        "Java 25": "ghcr.io/ptero-eggs/yolks:java_25",
+        "Java 22": "ghcr.io/ptero-eggs/yolks:java_22",
+        "Java 21": "ghcr.io/ptero-eggs/yolks:java_21",
+        "Java 17": "ghcr.io/ptero-eggs/yolks:java_17",
+        "Java 16": "ghcr.io/ptero-eggs/yolks:java_16",
+        "Java 11": "ghcr.io/ptero-eggs/yolks:java_11",
+        "Java 8": "ghcr.io/ptero-eggs/yolks:java_8"
+    },
+    "file_denylist": [],
+    "startup": "bash <(curl -fsSL --retry 3 --retry-delay 2 https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/minecraft.sh)",
+    "config": {
+        "files": "{\r\n    \"server.properties\": {\r\n        \"parser\": \"properties\",\r\n        \"find\": {\r\n            \"server-ip\": \"0.0.0.0\",\r\n            \"server-port\": \"{{server.build.default.port}}\",\r\n            \"query.port\": \"{{server.build.default.port}}\"\r\n        }\r\n    }\r\n}",
+        "startup": "{\r\n    \"done\": \")! For help, type \"\r\n}",
+        "logs": "{}",
+        "stop": "stop"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/ash\nset -eu\n\nSERVER_DIR=\"/mnt/server\"\nTMP_DIR=\"${SERVER_DIR}/.loxy-minecraft-install\"\nPROJECT=\"paper\"\nUSER_AGENT=\"Loxy Systems Pterodactyl (https://loxy.host)\"\nSOFTWARE=\"${SERVER_SOFTWARE:-auto}\"\nMC_VERSION=\"${MINECRAFT_VERSION:-latest}\"\nBUILD=\"${BUILD_NUMBER:-latest}\"\nJAR=\"${SERVER_JARFILE:-server.jar}\"\n\ncleanup() {\n    rm -rf \"${TMP_DIR}\"\n}\ntrap cleanup EXIT\n\nrm -rf \"${TMP_DIR}\"\nmkdir -p \"${TMP_DIR}\" \"${SERVER_DIR}\"\n\necho \"==================================================\"\necho \"      Minecraft Installer - Loxy Systems v2\"\necho \"==================================================\"\n\nDOWNLOAD_URL=\"\"\nSELECTED_SOFTWARE=\"\"\n\n# URL personalizada sempre tem prioridade.\nif [ -n \"${DL_PATH:-}\" ]; then\n    echo \"[DOWNLOAD] Usando DL_PATH personalizado.\"\n    DOWNLOAD_URL=\"$(eval echo \"$(echo \"${DL_PATH}\" | sed -e 's/{{/${/g' -e 's/}}/}/g')\")\"\n    SELECTED_SOFTWARE=\"custom\"\nfi\n\n# Tenta Paper primeiro em auto/paper.\nif [ -z \"${DOWNLOAD_URL}\" ] && { [ \"${SOFTWARE}\" = \"auto\" ] || [ \"${SOFTWARE}\" = \"paper\" ]; }; then\n    echo \"[PAPER] Consultando API oficial...\"\n\n    PROJECT_JSON=\"$(curl -fsSL --retry 4 --retry-delay 2 \\\n        --user-agent \"${USER_AGENT}\" \\\n        \"https://fill.papermc.io/v3/projects/${PROJECT}\" 2>/dev/null || true)\"\n\n    if [ -n \"${PROJECT_JSON}\" ]; then\n        if [ \"${MC_VERSION}\" = \"latest\" ] || [ -z \"${MC_VERSION}\" ]; then\n            PAPER_VERSION=\"$(printf '%s' \"${PROJECT_JSON}\" | jq -r '.versions | to_entries | .[0].value[0] // empty')\"\n        else\n            PAPER_VERSION=\"${MC_VERSION}\"\n        fi\n\n        VERSION_VALID=\"$(printf '%s' \"${PROJECT_JSON}\" | jq -r \\\n            --arg VERSION \"${PAPER_VERSION}\" \\\n            '[.versions[][]] | index($VERSION) != null' 2>/dev/null || echo false)\"\n\n        if [ \"${VERSION_VALID}\" = \"true\" ]; then\n            VERSION_JSON=\"$(curl -fsSL --retry 4 --retry-delay 2 \\\n                --user-agent \"${USER_AGENT}\" \\\n                \"https://fill.papermc.io/v3/projects/${PROJECT}/versions/${PAPER_VERSION}\" 2>/dev/null || true)\"\n\n            if [ -n \"${VERSION_JSON}\" ]; then\n                if [ \"${BUILD}\" = \"latest\" ] || [ -z \"${BUILD}\" ]; then\n                    PAPER_BUILD=\"$(printf '%s' \"${VERSION_JSON}\" | jq -r '.builds[0] // empty')\"\n                else\n                    PAPER_BUILD=\"${BUILD}\"\n                fi\n\n                BUILD_VALID=\"$(printf '%s' \"${VERSION_JSON}\" | jq -r \\\n                    --arg BUILD \"${PAPER_BUILD}\" \\\n                    '[.builds[] | tostring] | index($BUILD) != null' 2>/dev/null || echo false)\"\n\n                if [ \"${BUILD_VALID}\" != \"true\" ]; then\n                    PAPER_BUILD=\"$(printf '%s' \"${VERSION_JSON}\" | jq -r '.builds[0] // empty')\"\n                fi\n\n                if [ -n \"${PAPER_BUILD}\" ]; then\n                    BUILD_JSON=\"$(curl -fsSL --retry 4 --retry-delay 2 \\\n                        --user-agent \"${USER_AGENT}\" \\\n                        \"https://fill.papermc.io/v3/projects/${PROJECT}/versions/${PAPER_VERSION}/builds/${PAPER_BUILD}\" 2>/dev/null || true)\"\n\n                    DOWNLOAD_URL=\"$(printf '%s' \"${BUILD_JSON}\" | jq -r '.downloads.\"server:default\".url // empty' 2>/dev/null || true)\"\n\n                    if [ -n \"${DOWNLOAD_URL}\" ]; then\n                        SELECTED_SOFTWARE=\"paper\"\n                        MC_VERSION=\"${PAPER_VERSION}\"\n                        BUILD=\"${PAPER_BUILD}\"\n                        echo \"[PAPER] Versao: ${MC_VERSION} | Build: ${BUILD}\"\n                    fi\n                fi\n            fi\n        fi\n    fi\n\n    if [ -z \"${DOWNLOAD_URL}\" ] && [ \"${SOFTWARE}\" = \"paper\" ]; then\n        echo \"[ERRO] A versao ${MC_VERSION} nao foi encontrada no Paper.\"\n        echo \"[ERRO] Use SERVER_SOFTWARE=auto para permitir fallback Vanilla.\"\n        exit 1\n    fi\nfi\n\n# Fallback oficial Mojang para versões sem build Paper.\nif [ -z \"${DOWNLOAD_URL}\" ] && { [ \"${SOFTWARE}\" = \"auto\" ] || [ \"${SOFTWARE}\" = \"vanilla\" ]; }; then\n    echo \"[VANILLA] Consultando manifest oficial da Mojang...\"\n\n    MANIFEST=\"$(curl -fsSL --retry 4 --retry-delay 2 \\\n        --user-agent \"${USER_AGENT}\" \\\n        \"https://piston-meta.mojang.com/mc/game/version_manifest_v2.json\")\"\n\n    if [ \"${MC_VERSION}\" = \"latest\" ] || [ -z \"${MC_VERSION}\" ]; then\n        VANILLA_VERSION=\"$(printf '%s' \"${MANIFEST}\" | jq -r '.latest.release')\"\n    else\n        VANILLA_VERSION=\"${MC_VERSION}\"\n    fi\n\n    VERSION_URL=\"$(printf '%s' \"${MANIFEST}\" | jq -r \\\n        --arg VERSION \"${VANILLA_VERSION}\" \\\n        '.versions[] | select(.id == $VERSION) | .url' | head -n1)\"\n\n    if [ -z \"${VERSION_URL}\" ] || [ \"${VERSION_URL}\" = \"null\" ]; then\n        echo \"[ERRO] Minecraft ${VANILLA_VERSION} nao encontrado no manifest oficial.\"\n        exit 1\n    fi\n\n    VERSION_META=\"$(curl -fsSL --retry 4 --retry-delay 2 \\\n        --user-agent \"${USER_AGENT}\" \\\n        \"${VERSION_URL}\")\"\n\n    DOWNLOAD_URL=\"$(printf '%s' \"${VERSION_META}\" | jq -r '.downloads.server.url // empty')\"\n\n    if [ -z \"${DOWNLOAD_URL}\" ]; then\n        echo \"[ERRO] A Mojang nao disponibiliza server.jar para ${VANILLA_VERSION}.\"\n        exit 1\n    fi\n\n    SELECTED_SOFTWARE=\"vanilla\"\n    MC_VERSION=\"${VANILLA_VERSION}\"\n    echo \"[VANILLA] Versao: ${MC_VERSION}\"\nfi\n\nif [ -z \"${DOWNLOAD_URL}\" ]; then\n    echo \"[ERRO] Nenhuma URL de download valida foi encontrada.\"\n    exit 1\nfi\n\necho \"[DOWNLOAD] Software: ${SELECTED_SOFTWARE}\"\necho \"[DOWNLOAD] Baixando ${JAR}...\"\n\ncurl -fL --retry 5 --retry-delay 2 \\\n    --user-agent \"${USER_AGENT}\" \\\n    -o \"${TMP_DIR}/${JAR}\" \\\n    \"${DOWNLOAD_URL}\"\n\nif [ ! -s \"${TMP_DIR}/${JAR}\" ]; then\n    echo \"[ERRO] O JAR baixado esta vazio.\"\n    exit 1\nfi\n\n# Valida estrutura ZIP/JAR antes de substituir o servidor atual.\nif ! unzip -tqq \"${TMP_DIR}/${JAR}\" >/dev/null 2>&1; then\n    echo \"[ERRO] O arquivo baixado nao e um JAR valido.\"\n    exit 1\nfi\n\ncd \"${SERVER_DIR}\"\n\nif [ -f \"${JAR}\" ]; then\n    rm -f \"${JAR}.old\"\n    mv \"${JAR}\" \"${JAR}.old\"\nfi\n\nmv \"${TMP_DIR}/${JAR}\" \"${SERVER_DIR}/${JAR}\"\n\nif [ ! -f \"${SERVER_DIR}/server.properties\" ]; then\n    echo \"[CONFIG] Baixando server.properties base...\"\n    curl -fsSL --retry 3 --retry-delay 2 \\\n        --user-agent \"${USER_AGENT}\" \\\n        -o \"${SERVER_DIR}/server.properties\" \\\n        \"https://raw.githubusercontent.com/pterodactyl/game-eggs/main/minecraft/java/server.properties\"\nfi\n\necho \"==================================================\"\necho \" Instalacao concluida.\"\necho \" Software: ${SELECTED_SOFTWARE}\"\necho \" Minecraft: ${MC_VERSION}\"\necho \" Jar: ${JAR}\"\necho \" Startup remoto: LoxyHosting/loxy-game-eggs/minecraft.sh\"\necho \"==================================================\"\n",
+            "container": "ghcr.io/ptero-eggs/installers:alpine",
+            "entrypoint": "ash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Software do Servidor",
+            "description": "auto: usa Paper quando disponível e Vanilla oficial como fallback. paper: exige Paper. vanilla: usa o servidor oficial da Mojang.",
+            "env_variable": "SERVER_SOFTWARE",
+            "default_value": "auto",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:auto,paper,vanilla",
+            "field_type": "text"
+        },
+        {
+            "name": "Minecraft Version",
+            "description": "Versão do Minecraft. Use latest para a versão mais recente. Compatível com versões legadas e atuais; em auto a Egg tenta Paper e usa Vanilla oficial quando não existir build Paper.",
+            "env_variable": "MINECRAFT_VERSION",
+            "default_value": "latest",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:20",
+            "field_type": "text"
+        },
+        {
+            "name": "Server Jar File",
+            "description": "The name of the server jarfile to run the server with.",
+            "env_variable": "SERVER_JARFILE",
+            "default_value": "server.jar",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|regex:/^([\\w\\d._-]+)(\\.jar)$/",
+            "field_type": "text"
+        },
+        {
+            "name": "Download Path",
+            "description": "A URL to use to download a server.jar rather than the ones in the install script. This is not user viewable.",
+            "env_variable": "DL_PATH",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Build Number",
+            "description": "Build do Paper. Use latest para a build mais recente. Ignorado quando o software selecionado for Vanilla.",
+            "env_variable": "BUILD_NUMBER",
+            "default_value": "latest",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:20",
+            "field_type": "text"
+        }
+    ]
+}
