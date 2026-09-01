@@ -1,0 +1,102 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-09-01T13:00:00-03:00",
+    "name": "Open-MP | Loxy v2.5",
+    "author": "Loxy Systems",
+    "description": "Egg Open-MP para Pterodactyl usando config.json como configuracao principal. server.cfg nao e obrigatorio. Runtime Debian 12 com i386, reparo automatico do omp-server sem usar /tmp e startup remoto da Loxy Systems.",
+    "features": [],
+    "docker_images": {
+        "OpenMP Debian 12": "ghcr.io/ptero-eggs/games:samp"
+    },
+    "file_denylist": [],
+    "startup": "bash <(curl -fsSL --retry 3 --retry-delay 2 https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/openmp.sh)",
+    "config": {
+        "files": "{\n    \"config.json\": {\n        \"parser\": \"json\",\n        \"find\": {\n            \"name\": \"{{server.build.env.HOST_NAME}}\",\n            \"max_players\": \"{{server.build.env.MAX_PLAYERS}}\",\n            \"max_bots\": \"{{server.build.env.MAX_NPC}}\",\n            \"website\": \"{{server.build.env.WEB_URL}}\",\n            \"enable_query\": \"{{server.build.env.QUERY}}\",\n            \"network.port\": \"{{server.build.default.port}}\",\n            \"rcon.password\": \"{{server.build.env.RCON_PASSWORD}}\"\n        }\n    }\n}",
+        "startup": "{\n    \"done\": \"Iniciando omp-server...\"\n}",
+        "logs": "{\n    \"custom\": true,\n    \"location\": \"open-mp.log\"\n}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\nset -Eeuo pipefail\nexport DEBIAN_FRONTEND=noninteractive\n\nSERVER_DIR=\"/mnt/server\"\nREPO=\"openmultiplayer/open.mp\"\nVERSION=\"${VERSION:-latest}\"\nTMP_DIR=\"${SERVER_DIR}/.loxy-openmp-install\"\ncleanup(){ rm -rf \"${TMP_DIR}\"; }\ntrap cleanup EXIT\n\nrm -rf \"${TMP_DIR}\"\nmkdir -p \"${TMP_DIR}/extract\" \"${SERVER_DIR}\"\n\necho '=================================================='\necho '      Open-MP Installer - Loxy Systems v2.5'\necho '=================================================='\n\necho '[1/6] Instalando dependencias...'\napt-get update\napt-get install -y --no-install-recommends ca-certificates curl jq tar file\nrm -rf /var/lib/apt/lists/*\n\necho '[2/6] Consultando release oficial do Open-MP...'\nif [[ -z \"${VERSION}\" || \"${VERSION}\" == 'latest' ]]; then\n    RELEASE_API=\"https://api.github.com/repos/${REPO}/releases/latest\"\nelse\n    RELEASE_API=\"https://api.github.com/repos/${REPO}/releases/tags/${VERSION}\"\nfi\n\nRELEASE_JSON=\"$(curl -fsSL --retry 5 --retry-delay 2 -H 'Accept: application/vnd.github+json' -H 'User-Agent: Loxy-Pterodactyl-OpenMP' \"${RELEASE_API}\")\"\nRELEASE_TAG=\"$(printf '%s' \"${RELEASE_JSON}\" | jq -r '.tag_name // empty')\"\nDOWNLOAD_LINK=\"$(printf '%s' \"${RELEASE_JSON}\" | jq -r '.assets[]? | select(.name == \"open.mp-linux-x86-dynssl.tar.gz\") | .browser_download_url' | head -n1)\"\n\nif [[ -z \"${DOWNLOAD_LINK}\" ]]; then\n    DOWNLOAD_LINK=\"$(printf '%s' \"${RELEASE_JSON}\" | jq -r '.assets[]? | select(.name == \"open.mp-linux-x86.tar.gz\") | .browser_download_url' | head -n1)\"\nfi\n\nif [[ -z \"${DOWNLOAD_LINK}\" || \"${DOWNLOAD_LINK}\" == 'null' ]]; then\n    echo '[ERRO] Asset Linux x86 do Open-MP nao encontrado.'\n    exit 1\nfi\n\necho \"[3/6] Baixando Open-MP ${RELEASE_TAG}...\"\ncurl -fL --retry 5 --retry-delay 2 -o \"${TMP_DIR}/openmp.tar.gz\" \"${DOWNLOAD_LINK}\"\n\necho '[4/6] Extraindo no volume do servidor...'\ntar -xzf \"${TMP_DIR}/openmp.tar.gz\" -C \"${TMP_DIR}/extract\"\nOMP_BINARY=\"$(find \"${TMP_DIR}/extract\" -type f -name omp-server -print -quit || true)\"\n[[ -n \"${OMP_BINARY}\" ]] || { echo '[ERRO] omp-server nao encontrado no pacote.'; exit 1; }\nOMP_ROOT=\"$(dirname \"${OMP_BINARY}\")\"\ncp -a -n \"${OMP_ROOT}/.\" \"${SERVER_DIR}/\"\nchmod 755 \"${SERVER_DIR}/omp-server\"\n\n# config.json e a configuracao principal. Nunca exige server.cfg.\nif [[ ! -f \"${SERVER_DIR}/config.json\" ]]; then\n    echo '[CONFIG] Gerando config.json padrao...'\n    (cd \"${SERVER_DIR}\" && ./omp-server --default-config >/dev/null 2>&1 || true)\nfi\n\nif [[ ! -f \"${SERVER_DIR}/config.json\" ]]; then\n    echo '[ERRO] Nao foi possivel criar config.json.'\n    exit 1\nfi\n\necho '[5/6] Ajustando config.json com as variaveis da Egg...'\nMAX_PLAYERS_VALUE=\"${MAX_PLAYERS:-50}\"\nMAX_NPC_VALUE=\"${MAX_NPC:-0}\"\nQUERY_VALUE=\"${QUERY:-true}\"\nHOST_NAME_VALUE=\"${HOST_NAME:-Servidor Open-MP}\"\nWEB_URL_VALUE=\"${WEB_URL:-open.mp}\"\nRCON_PASSWORD_VALUE=\"${RCON_PASSWORD:-}\"\nSERVER_PORT_VALUE=\"${SERVER_PORT:-7777}\"\n[[ \"${MAX_PLAYERS_VALUE}\" =~ ^[0-9]+$ ]] || MAX_PLAYERS_VALUE=50\n[[ \"${MAX_NPC_VALUE}\" =~ ^[0-9]+$ ]] || MAX_NPC_VALUE=0\n[[ \"${SERVER_PORT_VALUE}\" =~ ^[0-9]+$ ]] || SERVER_PORT_VALUE=7777\n[[ \"${QUERY_VALUE}\" == 'true' || \"${QUERY_VALUE}\" == 'false' ]] || QUERY_VALUE=true\n\nTMP_CONFIG=\"${TMP_DIR}/config.json.tmp\"\njq --arg name \"${HOST_NAME_VALUE}\" --arg website \"${WEB_URL_VALUE}\" \\\n   --argjson max_players \"${MAX_PLAYERS_VALUE}\" --argjson max_bots \"${MAX_NPC_VALUE}\" \\\n   --argjson enable_query \"${QUERY_VALUE}\" --argjson port \"${SERVER_PORT_VALUE}\" \\\n   --arg rcon_password \"${RCON_PASSWORD_VALUE}\" \\\n   '.name=$name | .max_players=$max_players | .max_bots=$max_bots | .website=$website | .enable_query=$enable_query | .network.port=$port | .rcon.password=$rcon_password' \\\n   \"${SERVER_DIR}/config.json\" > \"${TMP_CONFIG}\"\nmv \"${TMP_CONFIG}\" \"${SERVER_DIR}/config.json\"\n\necho '[6/6] Ajustando permissoes...'\nfind \"${SERVER_DIR}/plugins\" -maxdepth 1 -type f -name '*.so' -exec chmod 755 {} \\; 2>/dev/null || true\nfind \"${SERVER_DIR}/components\" -maxdepth 1 -type f -name '*.so' -exec chmod 755 {} \\; 2>/dev/null || true\n\necho '=================================================='\necho \" Instalacao concluida: Open-MP ${RELEASE_TAG}\"\necho ' Configuracao: config.json'\necho ' server.cfg: NAO obrigatorio'\necho '=================================================='\n",
+            "container": "ghcr.io/ptero-eggs/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Nome Do Servidor",
+            "description": "Define um Nome para o Servidor, o nome será visto pelos jogadores.",
+            "env_variable": "HOST_NAME",
+            "default_value": "Servidor Open-MP",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:40",
+            "field_type": "text"
+        },
+        {
+            "name": "Maximo de Jogadores",
+            "description": "A quantidade máxima de jogadores que seu servidor pode conter. Ao alterar esse número, você pode alterar quantos jogadores podem entrar no servidor.",
+            "env_variable": "MAX_PLAYERS",
+            "default_value": "50",
+            "user_viewable": true,
+            "user_editable": false,
+            "rules": "required|numeric|digits_between:1,3",
+            "field_type": "text"
+        },
+        {
+            "name": "Maximo de Npcs",
+            "description": "A quantidade máxima de Npcs que seu servidor pode conter. Ao alterar esse número, você altera quantos slots de jogador podem ser usados ​​pelos Npcs.",
+            "env_variable": "MAX_NPC",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|digits_between:0,3",
+            "field_type": "text"
+        },
+        {
+            "name": "Link do Site",
+            "description": "Isto define o Link que irá aparecer nas informações do Servidor, usuários do SA-MP poderão visualizar.",
+            "env_variable": "WEB_URL",
+            "default_value": "open.mp",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:40",
+            "field_type": "text"
+        },
+        {
+            "name": "Versão do OPEN-MP",
+            "description": "Alterna a versão Instalada do Open-MP(Recomendado Latest).\r\nExemplo:(v1-RC1)",
+            "env_variable": "VERSION",
+            "default_value": "latest",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "string|nullable",
+            "field_type": "text"
+        },
+        {
+            "name": "Query do Servidor | Desativar / Ativar",
+            "description": "Ativa ou desativa a consulta do servidor no navegador do open.mp.",
+            "env_variable": "QUERY",
+            "default_value": "true",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Rcon do Servidor",
+            "description": "Define o Rcon do servidor, isto irá setar permissão maxima para a pessoa que usar ele(em Gamemodes não protegidas).NÃO COMPARTILHE COM QUEM VOCÊ NÃO TENHA TOTAL CONFIANÇA!",
+            "env_variable": "RCON_PASSWORD",
+            "default_value": "MeMudePorFavor",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:20",
+            "field_type": "text"
+        }
+    ]
+}
