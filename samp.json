@@ -13,7 +13,7 @@
         "SA-MP - Debian 12 + i386 (Recomendado)": "ghcr.io/ptero-eggs/games:samp"
     },
     "file_denylist": [],
-    "startup": "bash <(curl -fsSL --retry 3 --retry-delay 2 https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/samp.sh)",
+    "startup": "bash /home/container/samp.sh",
     "config": {
         "files": "{\n    \"server.cfg\": {\n        \"parser\": \"file\",\n        \"find\": {\n            \"Note\": \"Note: To change some values go to startup, and change it!\",\n            \"Notas\": \"Notas: Para alterar alguns valores va para startup, e altere la!\",\n            \"port\": \"port {{server.build.default.port}}\",\n            \"maxplayers\": \"maxplayers {{server.build.env.MAX_PLAYERS}}\",\n            \"hostname\": \"hostname {{server.build.env.HOST_NAME}}\",\n            \"announce\": \"announce {{server.build.env.ANNONCE}}\",\n            \"weburl\": \"weburl {{server.build.env.WEB_URL}}\",\n            \"maxnpc\": \"maxnpc {{server.build.env.MAX_NPC}}\",\n            \"query\": \"query {{server.build.env.QUERY}}\",\n            \"rcon_password\": \"rcon_password {{server.build.env.PASSWORD}}\"\n        }\n    }\n}",
         "startup": "{\n    \"done\": \"Started server on \",\n    \"userInteraction\": []\n}",
@@ -22,7 +22,9 @@
     },
     "scripts": {
         "installation": {
-            "script": "#!/bin/bash\nset -Eeuo pipefail\n\nexport DEBIAN_FRONTEND=noninteractive\n\nSERVER_DIR=\"/mnt/server\"\nTMP_DIR=\"$(mktemp -d)\"\ntrap 'rm -rf \"${TMP_DIR}\"' EXIT\n\nPRIMARY_URL=\"https://sampcenter.com/download/server/linux/0.3.7.tar.gz\"\nFALLBACK_URL=\"https://github.com/drysius/Eggs/raw/main/Connect/SAMP/server/samp037svr_R2-1.tar.gz\"\nVOICE_URL=\"https://github.com/drysius/Eggs/releases/latest/download/sampvoice.so\"\n\necho \"==================================================\"\necho \"       SA-MP Connect - Loxy v2 Installer\"\necho \"==================================================\"\n\necho \"[1/6] Preparando instalador...\"\napt-get update\napt-get install -y --no-install-recommends \\\n    ca-certificates \\\n    curl \\\n    tar \\\n    gzip \\\n    file \\\n    coreutils\nrm -rf /var/lib/apt/lists/*\n\nmkdir -p \"${SERVER_DIR}\"\nmkdir -p \"${TMP_DIR}/extract\"\n\necho \"[2/6] Baixando SA-MP 0.3.7...\"\nif ! curl -fL --retry 4 --retry-delay 2 \\\n    -o \"${TMP_DIR}/samp.tar.gz\" \"${PRIMARY_URL}\"; then\n    echo \"[AVISO] Fonte principal indisponivel. Usando fallback Loxy/Drysius...\"\n    curl -fL --retry 4 --retry-delay 2 \\\n        -o \"${TMP_DIR}/samp.tar.gz\" \"${FALLBACK_URL}\"\nfi\n\necho \"[3/6] Extraindo pacote...\"\ntar -xzf \"${TMP_DIR}/samp.tar.gz\" -C \"${TMP_DIR}/extract\"\n\nSAMP_BINARY=\"$(find \"${TMP_DIR}/extract\" -type f -name samp03svr -print -quit || true)\"\nif [[ -z \"${SAMP_BINARY}\" ]]; then\n    echo \"[ERRO] O pacote baixado nao contem samp03svr.\"\n    exit 1\nfi\n\nSAMP_ROOT=\"$(dirname \"${SAMP_BINARY}\")\"\n\necho \"[4/6] Instalando apenas arquivos ausentes...\"\n# -n evita sobrescrever gamemodes, plugins, server.cfg e binarios existentes.\ncp -a -n \"${SAMP_ROOT}/.\" \"${SERVER_DIR}/\"\n\nif [[ ! -f \"${SERVER_DIR}/samp03svr\" ]]; then\n    echo \"[ERRO] samp03svr nao foi instalado.\"\n    exit 1\nfi\n\nchmod 755 \"${SERVER_DIR}/samp03svr\"\n[[ -f \"${SERVER_DIR}/samp-npc\" ]] && chmod 755 \"${SERVER_DIR}/samp-npc\"\n[[ -f \"${SERVER_DIR}/announce\" ]] && chmod 755 \"${SERVER_DIR}/announce\"\n\necho \"[5/6] Preparando configuracao...\"\n\nif [[ ! -f \"${SERVER_DIR}/server.cfg\" ]]; then\n    echo \"[ERRO] server.cfg nao foi encontrado no pacote.\"\n    exit 1\nfi\n\n# Só adiciona diretivas que estiverem realmente ausentes.\nif ! grep -Eq '^[[:space:]]*rcon_password[[:space:]]+' \"${SERVER_DIR}/server.cfg\"; then\n    echo \"rcon_password ${PASSWORD:-AlgumaCoisa}\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nif ! grep -Eq '^[[:space:]]*output[[:space:]]+' \"${SERVER_DIR}/server.cfg\"; then\n    echo \"output 1\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nif ! grep -Fq \"Note To change some values go to startup\" \"${SERVER_DIR}/server.cfg\"; then\n    echo \"Note To change some values go to startup, and change it!\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nif ! grep -Fq \"Notas Para alterar alguns valores va para startup\" \"${SERVER_DIR}/server.cfg\"; then\n    echo \"Notas Para alterar alguns valores va para startup, e altere la!\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nmkdir -p \"${SERVER_DIR}/plugins\"\n\n# Se o Voice estiver habilitado durante uma instalação/reinstalação,\n# baixa somente quando o arquivo não existe. Nunca substitui plugin do cliente.\nif [[ \"${SAMP_VOIP:-0}\" == \"1\" && ! -s \"${SERVER_DIR}/plugins/sampvoice.so\" ]]; then\n    echo \"[VOICE] Baixando sampvoice.so...\"\n    if curl -fL --retry 3 --retry-delay 2 \\\n        -o \"${SERVER_DIR}/plugins/sampvoice.so\" \"${VOICE_URL}\"; then\n        chmod 755 \"${SERVER_DIR}/plugins/sampvoice.so\"\n    else\n        echo \"[AVISO] Nao foi possivel baixar sampvoice.so. O SA-MP ainda podera iniciar.\"\n        rm -f \"${SERVER_DIR}/plugins/sampvoice.so\"\n    fi\nfi\n\necho \"[6/6] Finalizando instalacao...\"\n\nfind \"${SERVER_DIR}/plugins\" -maxdepth 1 -type f -name \"*.so\" -exec chmod 755 {} \\; 2>/dev/null || true\n\necho \"==================================================\"\necho \" Instalacao concluida.\"\necho \" Runtime: ghcr.io/ptero-eggs/games:samp\"\necho \" Startup remoto: LoxyHosting/loxy-game-eggs/samp/v2/start.sh\"\necho \" Arquivos existentes do cliente foram preservados.\"\necho \"==================================================\"\n",
+            "script": "#!/bin/bash\nset -Eeuo pipefail\n\nexport DEBIAN_FRONTEND=noninteractive\n\nSERVER_DIR=\"/mnt/server\"\nTMP_DIR=\"$(mktemp -d)\"\ntrap 'rm -rf \"${TMP_DIR}\"' EXIT\n\nPRIMARY_URL=\"https://sampcenter.com/download/server/linux/0.3.7.tar.gz\"\nFALLBACK_URL=\"https://github.com/drysius/Eggs/raw/main/Connect/SAMP/server/samp037svr_R2-1.tar.gz\"\nSAMPVOICE_VERSION=\"${SAMPVOICE_VERSION:-1.0.0}\"
+SAMPVOICE_SHA256=\"${SAMPVOICE_SHA256:-FF21093FB5A1D981A7168DEE87EF9E2978D186348B725D2DBB09B2ADC46C964F}\"
+VOICE_URL=\"https://github.com/drysius/Eggs/releases/download/${SAMPVOICE_VERSION}/sampvoice.so\"\n\necho \"==================================================\"\necho \"       SA-MP Connect - Loxy v2 Installer\"\necho \"==================================================\"\n\necho \"[1/6] Preparando instalador...\"\napt-get update\napt-get install -y --no-install-recommends \\\n    ca-certificates \\\n    curl \\\n    tar \\\n    gzip \\\n    file \\\n    coreutils\nrm -rf /var/lib/apt/lists/*\n\nmkdir -p \"${SERVER_DIR}\"\nmkdir -p \"${TMP_DIR}/extract\"\n\necho \"[2/6] Baixando SA-MP 0.3.7...\"\nif ! curl -fL --retry 4 --retry-delay 2 \\\n    -o \"${TMP_DIR}/samp.tar.gz\" \"${PRIMARY_URL}\"; then\n    echo \"[AVISO] Fonte principal indisponivel. Usando fallback Loxy/Drysius...\"\n    curl -fL --retry 4 --retry-delay 2 \\\n        -o \"${TMP_DIR}/samp.tar.gz\" \"${FALLBACK_URL}\"\nfi\n\necho \"[3/6] Extraindo pacote...\"\ntar -xzf \"${TMP_DIR}/samp.tar.gz\" -C \"${TMP_DIR}/extract\"\n\nSAMP_BINARY=\"$(find \"${TMP_DIR}/extract\" -type f -name samp03svr -print -quit || true)\"\nif [[ -z \"${SAMP_BINARY}\" ]]; then\n    echo \"[ERRO] O pacote baixado nao contem samp03svr.\"\n    exit 1\nfi\n\nSAMP_ROOT=\"$(dirname \"${SAMP_BINARY}\")\"\n\necho \"[4/6] Instalando apenas arquivos ausentes...\"\n# -n evita sobrescrever gamemodes, plugins, server.cfg e binarios existentes.\ncp -a -n \"${SAMP_ROOT}/.\" \"${SERVER_DIR}/\"\n\nif [[ ! -f \"${SERVER_DIR}/samp03svr\" ]]; then\n    echo \"[ERRO] samp03svr nao foi instalado.\"\n    exit 1\nfi\n\nchmod 755 \"${SERVER_DIR}/samp03svr\"\n[[ -f \"${SERVER_DIR}/samp-npc\" ]] && chmod 755 \"${SERVER_DIR}/samp-npc\"\n[[ -f \"${SERVER_DIR}/announce\" ]] && chmod 755 \"${SERVER_DIR}/announce\"\n\necho \"[5/6] Preparando configuracao...\"\n\nif [[ ! -f \"${SERVER_DIR}/server.cfg\" ]]; then\n    echo \"[ERRO] server.cfg nao foi encontrado no pacote.\"\n    exit 1\nfi\n\n# Só adiciona diretivas que estiverem realmente ausentes.\nif ! grep -Eq '^[[:space:]]*rcon_password[[:space:]]+' \"${SERVER_DIR}/server.cfg\"; then\n    echo \"rcon_password ${PASSWORD:-AlgumaCoisa}\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nif ! grep -Eq '^[[:space:]]*output[[:space:]]+' \"${SERVER_DIR}/server.cfg\"; then\n    echo \"output 1\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nif ! grep -Fq \"Note To change some values go to startup\" \"${SERVER_DIR}/server.cfg\"; then\n    echo \"Note To change some values go to startup, and change it!\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nif ! grep -Fq \"Notas Para alterar alguns valores va para startup\" \"${SERVER_DIR}/server.cfg\"; then\n    echo \"Notas Para alterar alguns valores va para startup, e altere la!\" >> \"${SERVER_DIR}/server.cfg\"\nfi\n\nmkdir -p \"${SERVER_DIR}/plugins\"\n\n# Se o Voice estiver habilitado durante uma instalação/reinstalação,\n# baixa somente quando o arquivo não existe. Nunca substitui plugin do cliente.\nif [[ \"${SAMP_VOIP:-0}\" == \"1\" && ! -s \"${SERVER_DIR}/plugins/sampvoice.so\" ]]; then\n    echo \"[VOICE] Baixando sampvoice.so...\"\n    if curl -fL --retry 3 --retry-delay 2 \\\n        -o \"${SERVER_DIR}/plugins/sampvoice.so\" \"${VOICE_URL}\"; then\n        chmod 755 \"${SERVER_DIR}/plugins/sampvoice.so\"\n    else\n        echo \"[AVISO] Nao foi possivel baixar sampvoice.so. O SA-MP ainda podera iniciar.\"\n        rm -f \"${SERVER_DIR}/plugins/sampvoice.so\"\n    fi\nfi\n\necho \"[6/6] Finalizando instalacao...\"\n\nfind \"${SERVER_DIR}/plugins\" -maxdepth 1 -type f -name \"*.so\" -exec chmod 755 {} \\; 2>/dev/null || true\n\necho \"==================================================\"\necho \" Instalacao concluida.\"\necho \" Runtime: ghcr.io/ptero-eggs/games:samp\"\necho \" Startup remoto: LoxyHosting/loxy-game-eggs/samp/v2/start.sh\"\necho \" Arquivos existentes do cliente foram preservados.\"\necho \"==================================================\"\n",
             "container": "ghcr.io/ptero-eggs/installers:debian",
             "entrypoint": "bash"
         }
@@ -116,6 +118,66 @@
             "user_viewable": true,
             "user_editable": false,
             "rules": "required|integer|between:0,65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Plugin - sscanf",
+            "description": "Habilita o carregamento do plugin sscanf antes do gamemode. Use 0 para diagnostico sem esse plugin.",
+            "env_variable": "SAMP_PLUGIN_SSCANF",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Plugin - streamer",
+            "description": "Habilita o carregamento do plugin streamer. Use 0 para testar o servidor sem ele.",
+            "env_variable": "SAMP_PLUGIN_STREAMER",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Plugin - Pawn.RakNet",
+            "description": "Habilita o carregamento do Pawn.RakNet. Use 0 para diagnostico isolado sem esse plugin.",
+            "env_variable": "SAMP_PLUGIN_PAWNRAKNET",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Plugin - SampVoice",
+            "description": "Habilita o carregamento do SampVoice conforme a configuracao do Voice. Use 0 para desabilitar sem alterar o gamemode.",
+            "env_variable": "SAMP_PLUGIN_SAMPVOICE",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Versao do SampVoice",
+            "description": "Versao fixa e validada do plugin. OStartup usa o valor definido para evitar downloads nao compatíveis.",
+            "env_variable": "SAMPVOICE_VERSION",
+            "default_value": "1.0.0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Modo Diagnostico",
+            "description": "Quando 1, inicia o servidor sem Pawn.RakNet e sem SampVoice para testes de isolamento do gamemode.",
+            "env_variable": "SAMP_DIAGNOSTIC",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|in:0,1",
             "field_type": "text"
         }
     ]
