@@ -1,174 +1,258 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -Eeuo pipefail
 
-cd /home/container
+# SA-MP startup simplificado para Pterodactyl / Loxy Hosting.
+# - Converte referencias .dll (ou sem extensao) para .so no server.cfg.
+# - Carrega automaticamente todos os .so da pasta plugins/.
+# - SAMP_VOIP=1 baixa sampvoice.so apenas se estiver ausente/vazio e aplica VOIP_PORT.
+# - Nao sobrescreve plugins existentes e nao cria backups persistentes.
+# - Encaminha stdout/stderr do servidor e server_log.txt ao console do Pterodactyl.
 
-RUNTIME_IMAGE="ghcr.io/ptero-eggs/games:samp"
-SAMPVOICE_VERSION="${SAMPVOICE_VERSION:-1.0.0}"
-SAMPVOICE_SHA256="${SAMPVOICE_SHA256:-ff21093fb5a1d981a7168dee87ef9e2978d186348b725d2dbb09b2adc46c964f}"
-VOICE_URL="https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/sampvoice.so"
-SAMP_VOIP="${SAMP_VOIP:-0}"
+SERVER_DIR="${SERVER_DIR:-/home/container}"
+SERVER_BIN="./samp03svr"
+SERVER_CFG="./server.cfg"
+PLUGIN_DIR="./plugins"
+SERVER_LOG="./server_log.txt"
+VOICE_URL="${SAMPVOICE_URL:-https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/sampvoice.so}"
+SAMP_VOIP="${SAMP_VOIP:-1}"
 VOIP_PORT="${VOIP_PORT:-0}"
-SAMP_DIAGNOSTIC="${SAMP_DIAGNOSTIC:-0}"
-SAMP_PLUGIN_SSCANF="${SAMP_PLUGIN_SSCANF:-1}"
-SAMP_PLUGIN_STREAMER="${SAMP_PLUGIN_STREAMER:-1}"
-SAMP_PLUGIN_PAWNRAKNET="${SAMP_PLUGIN_PAWNRAKNET:-1}"
-SAMP_PLUGIN_SAMPVOICE="${SAMP_PLUGIN_SAMPVOICE:-${SAMP_VOIP}}"
-CONFIG_BACKUP=""
-PLUGINS_TMP=""
+CONFIG_TMP=""
+VOICE_TMP=""
+SERVER_PID=""
+TAIL_PID=""
 
-warn() { echo "[WARN] $1"; }
-fail() { echo "[ERROR] $1"; exit "${2:-1}"; }
-plugin_enabled() {
-  local value="${1:-1}"
-  case "${value,,}" in
-    1|true|yes|on|enabled) return 0 ;;
-    0|false|no|off|disabled) return 1 ;;
-    *) return 0 ;;
-  esac
-}
-restore_server_cfg() {
-  if [[ -n "${CONFIG_BACKUP}" && -f "${CONFIG_BACKUP}" ]]; then
-    cp -f "${CONFIG_BACKUP}" ./server.cfg
-    rm -f "${CONFIG_BACKUP}"
-  fi
-  if [[ -n "${PLUGINS_TMP}" && -f "${PLUGINS_TMP}" ]]; then
-    rm -f "${PLUGINS_TMP}"
-  fi
-}
-trap 'status=$?; if [[ ${status} -ne 0 ]]; then echo "[ERROR] O processo SA-MP encerrou inesperadamente."; echo "[ERROR] Exit Code: ${status}"; if [[ ${status} -eq 139 ]]; then echo "[ERROR] Tipo: Segmentation Fault"; fi; fi; restore_server_cfg; if compgen -G "./core*" > /dev/null; then mkdir -p ./debug 2>/dev/null || true; cp -f ./core* ./debug/ 2>/dev/null || true; fi; exit ${status}' EXIT
-ulimit -c unlimited 2>/dev/null || true
-mkdir -p ./plugins ./debug
+log()  { printf '[SA-MP] %s\n' "$*"; }
+warn() { printf '[AVISO] %s\n' "$*" >&2; }
+fail() { printf '[ERRO] %s\n' "$*" >&2; exit "${2:-1}"; }
 
-printf '\n'
-echo "=================================================="
-echo "          SA-MP Connect - Loxy v3.0"
-echo " Runtime: ${RUNTIME_IMAGE}"
-echo "=================================================="
-
-if [[ ! -f "./samp03svr" ]]; then fail "samp03svr nao encontrado. Execute Reinstall no Pterodactyl para restaurar os arquivos base." 127; fi
-if [[ ! -f "./server.cfg" ]]; then fail "server.cfg nao encontrado no diretorio do servidor." 1; fi
-chmod 755 ./samp03svr
-[[ -f "./samp-npc" ]] && chmod 755 ./samp-npc
-[[ -f "./announce" ]] && chmod 755 ./announce
-find ./plugins -maxdepth 1 -type f -name "*.so" -exec chmod 755 {} \; 2>/dev/null || true
-if [[ -f ./server.cfg ]]; then CONFIG_BACKUP="./server.cfg.bak.$(date +%s)"; cp -a ./server.cfg "${CONFIG_BACKUP}"; fi
-
-detect_elf_class() {
-  local file_path="${1:-}"
-  if [[ -z "${file_path}" || ! -f "${file_path}" ]]; then echo "missing"; return 0; fi
-  if command -v readelf >/dev/null 2>&1; then readelf -h "${file_path}" 2>/dev/null | awk '/Class:/{print $2; exit}' || true
-  elif command -v objdump >/dev/null 2>&1; then objdump -f "${file_path}" 2>/dev/null | awk '/architecture:/{print $NF; exit}' || true
-  elif command -v file >/dev/null 2>&1; then file "${file_path}" 2>/dev/null | awk '{print $3, $4}' | grep -E '32|64' | head -n1 || true
-  else echo "unknown"; fi
-}
-
-validate_voice_asset() {
-  local asset_path="${1:-}"
-  if [[ ! -f "${asset_path}" ]]; then return 1; fi
-
-  local expected_hash="${SAMPVOICE_SHA256,,}"
-
-  if command -v sha256sum >/dev/null 2>&1; then
-    local actual_hash
-    actual_hash="$(sha256sum "${asset_path}" | awk '{print $1}')"
-    actual_hash="${actual_hash,,}"
-    if [[ "${actual_hash}" != "${expected_hash}" ]]; then
-      echo "[ERROR] Hash do SampVoice invalido: ${actual_hash} (esperado ${expected_hash})." >&2
-      return 2
+cleanup() {
+    local status=$?
+    if [[ -n "${TAIL_PID}" ]] && kill -0 "${TAIL_PID}" 2>/dev/null; then
+        kill "${TAIL_PID}" 2>/dev/null || true
+        wait "${TAIL_PID}" 2>/dev/null || true
     fi
-  fi
-
-  if command -v readelf >/dev/null 2>&1; then
-    local asset_class="$(detect_elf_class "${asset_path}")"
-    local server_class="$(detect_elf_class ./samp03svr)"
-    if [[ -n "${asset_class}" && "${asset_class}" != "missing" && "${asset_class}" != "${server_class}" ]]; then
-      echo "[ERROR] Arquitetura do SampVoice incompatível com a do executavel (${asset_class} != ${server_class})." >&2
-      return 3
-    fi
-  fi
-  return 0
+    [[ -z "${CONFIG_TMP}" || ! -f "${CONFIG_TMP}" ]] || rm -f -- "${CONFIG_TMP}"
+    [[ -z "${VOICE_TMP}" || ! -f "${VOICE_TMP}" ]] || rm -f -- "${VOICE_TMP}"
+    return "${status}"
 }
 
-ensure_voice() {
-  local voice_path="./plugins/sampvoice.so"
-  if plugin_enabled "${SAMP_PLUGIN_SAMPVOICE}"; then
-    if [[ "${SAMP_VOIP:-0}" == "1" ]]; then
-      if [[ ! -s "${voice_path}" ]]; then
-        echo "[VOICE] sampvoice.so ausente. Baixando versao fixada ${SAMPVOICE_VERSION}..."
-        rm -f "${voice_path}.tmp"
-        curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 5 -o "${voice_path}.tmp" "${VOICE_URL}"
-        if [[ ! -s "${voice_path}.tmp" ]]; then rm -f "${voice_path}.tmp"; fail "Falha ao baixar o SampVoice. O servidor nao pode iniciar com voice habilitado." 1; fi
-        if ! validate_voice_asset "${voice_path}.tmp"; then rm -f "${voice_path}.tmp"; fail "Download do SampVoice invalido ou incompatível com a arquitetura do servidor." 1; fi
-        mv -f "${voice_path}.tmp" "${voice_path}"
-        chmod 755 "${voice_path}"
-      elif ! validate_voice_asset "${voice_path}"; then
-        echo "[VOICE] sampvoice.so inválido ou incompatível. Rebaixando versao fixada ${SAMPVOICE_VERSION}..."
-        rm -f "${voice_path}"
-        curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 5 -o "${voice_path}.tmp" "${VOICE_URL}"
-        if [[ ! -s "${voice_path}.tmp" ]]; then rm -f "${voice_path}.tmp"; fail "Falha ao rebaixar o SampVoice. O servidor nao pode iniciar com voice habilitado." 1; fi
-        if ! validate_voice_asset "${voice_path}.tmp"; then rm -f "${voice_path}.tmp"; fail "Download do SampVoice invalido ou incompatível com a arquitetura do servidor." 1; fi
-        mv -f "${voice_path}.tmp" "${voice_path}"
-        chmod 755 "${voice_path}"
-      fi
-      echo "[VOICE] Porta configurada: ${VOIP_PORT}"
+forward_signal() {
+    local signal="$1"
+    log "Sinal ${signal} recebido; encaminhando ao processo SA-MP..."
+    if [[ -n "${SERVER_PID}" ]] && kill -0 "${SERVER_PID}" 2>/dev/null; then
+        kill -s "${signal}" "${SERVER_PID}" 2>/dev/null || true
+    fi
+}
+
+trap cleanup EXIT
+trap 'forward_signal TERM' TERM
+trap 'forward_signal INT' INT
+trap 'printf "[ERRO] Falha no startup (linha %s, codigo %s).\\n" "$LINENO" "$?" >&2' ERR
+
+cd "${SERVER_DIR}" || fail "Nao foi possivel acessar ${SERVER_DIR}."
+[[ -f "${SERVER_BIN}" ]] || fail "samp03svr nao encontrado. Execute Reinstall no Pterodactyl para restaurar os arquivos base." 127
+[[ -f "${SERVER_CFG}" ]] || fail "server.cfg nao encontrado."
+command -v awk >/dev/null 2>&1 || fail "awk nao esta disponivel na imagem Docker."
+
+chmod u+x "${SERVER_BIN}" || fail "Nao foi possivel liberar a execucao de samp03svr."
+mkdir -p "${PLUGIN_DIR}"
+
+# Remove apenas marcadores vazios legados criados por startups antigos da Loxy.
+for legacy_marker in .loxy-sampvoice-managed .loxy-svport-managed; do
+    if [[ -f "${legacy_marker}" ]]; then
+        rm -f -- "${legacy_marker}"
+        log "Marcador legado removido: ${legacy_marker}"
+    fi
+done
+
+# SAMP_VOIP controla o download automatico e a aplicacao de sv_port.
+# Plugins .so que ja estejam em plugins/ continuam sujeitos a autodeteccao normal.
+case "${SAMP_VOIP,,}" in
+    1|true|yes|on|enabled) VOIP_ENABLED=1 ;;
+    0|false|no|off|disabled|'') VOIP_ENABLED=0 ;;
+    *) fail "SAMP_VOIP invalido ('${SAMP_VOIP}'). Use 0 ou 1." ;;
+esac
+
+SV_PORT_ENABLED=0
+if (( VOIP_ENABLED == 1 )); then
+    # O download e ativado por padrao. A porta e opcional para nao impedir
+    # o primeiro boot antes de o cliente adicionar uma allocation UDP.
+    if [[ "${VOIP_PORT}" =~ ^[0-9]{1,5}$ ]] && (( 10#${VOIP_PORT} >= 1 && 10#${VOIP_PORT} <= 65535 )); then
+        SV_PORT_ENABLED=1
+    elif [[ "${VOIP_PORT}" == "0" ]]; then
+        warn "SAMP_VOIP esta ativo, mas VOIP_PORT=0. O plugin sera baixado/carregado; sv_port nao sera alterado ate configurar uma porta UDP."
     else
-      if [[ -f "${voice_path}" ]]; then echo "[VOICE] SampVoice desabilitado no startup; nao sera carregado pelo server.cfg."; fi
+        fail "VOIP_PORT invalida ('${VOIP_PORT}'). Use 0 (sem configurar sv_port) ou uma porta entre 1 e 65535."
     fi
-  else
-    echo "[VOICE] SampVoice desabilitado por configuracao do cliente."
-  fi
-}
 
-rewrite_plugins_cfg() {
-  local config="./server.cfg"
-  local -a desired=()
-  local -a keep=()
-  for plugin in sscanf streamer pawnraknet sampvoice; do
-    local enabled_var="SAMP_PLUGIN_$(printf '%s' "${plugin}" | tr '[:lower:]' '[:upper:]')"
-    local enabled_value="${!enabled_var:-1}"
-    local plugin_path="./plugins/${plugin}.so"
-    if plugin_enabled "${enabled_value}" && [[ -f "${plugin_path}" ]]; then desired+=("${plugin}.so"); fi
-  done
-  if grep -Eq '^[[:space:]]*plugins([[:space:]]|$)' "${config}"; then
-    while IFS= read -r line; do
-      if [[ "${line}" =~ ^[[:space:]]*plugins([[:space:]]|$) ]]; then
-        for item in ${line}; do
-          if [[ "${item}" == "plugins" ]]; then continue; fi
-          local lower="${item,,}"
-          lower="${lower%.so}"
-          case "${lower}" in sscanf|streamer|pawnraknet|sampvoice) continue ;; *) keep+=("${item}") ;; esac
-        done
-        break
-      fi
-    done < "${config}"
-    for item in "${desired[@]}"; do keep+=("${item}"); done
-    PLUGINS_TMP="./server.cfg.plugins.tmp"
-    awk -v new="${keep[*]}" 'BEGIN { OFS=" " } /^[[:space:]]*plugins([[:space:]]|$)/ { if (new != "") { print "plugins " new }; next } { print }' "${config}" > "${PLUGINS_TMP}"
-    mv -f "${PLUGINS_TMP}" "${config}"
-    PLUGINS_TMP=""
-  elif (( ${#desired[@]} > 0 )); then
-    echo "plugins ${desired[*]}" >> "${config}"
-  fi
-}
-
-if [[ "${SAMP_VOIP:-0}" == "1" ]]; then
-  if [[ "${VOIP_PORT:-0}" =~ ^[0-9]+$ ]] && (( VOIP_PORT >= 1 && VOIP_PORT <= 65535 )); then
-    if grep -Eq '^[[:space:]]*sv_port[[:space:]]+' ./server.cfg; then
-      sed -i -E "s/^[[:space:]]*sv_port[[:space:]]+.*/sv_port ${VOIP_PORT}/" ./server.cfg
+    if [[ ! -s "${PLUGIN_DIR}/sampvoice.so" ]]; then
+        command -v curl >/dev/null 2>&1 || fail "SAMP_VOIP=1, mas curl nao esta instalado na imagem Docker."
+        log "SAMP_VOIP ativado; baixando sampvoice.so..."
+        VOICE_TMP="${PLUGIN_DIR}/.sampvoice.so.tmp.$$"
+        rm -f -- "${VOICE_TMP}"
+        if ! curl -fLsS --retry 3 --retry-delay 2 --connect-timeout 10 \
+            -o "${VOICE_TMP}" "${VOICE_URL}"; then
+            fail "Nao foi possivel baixar sampvoice.so de ${VOICE_URL}."
+        fi
+        [[ -s "${VOICE_TMP}" ]] || fail "O download do sampvoice.so retornou um arquivo vazio."
+        chmod 755 "${VOICE_TMP}"
+        mv -f -- "${VOICE_TMP}" "${PLUGIN_DIR}/sampvoice.so"
+        VOICE_TMP=""
+        log "sampvoice.so instalado em ${PLUGIN_DIR}."
     else
-      echo "sv_port ${VOIP_PORT}" >> ./server.cfg
+        log "SampVoice ja existe; mantendo o arquivo do cliente sem sobrescrever."
     fi
-  else
-    warn "SAMP_VOIP=1, mas VOIP_PORT nao e uma porta valida. Voice sera desligado."
-    SAMP_VOIP=0
-  fi
 else
-  sed -i -E '/^[[:space:]]*sv_port[[:space:]]+/d' ./server.cfg 2>/dev/null || true
+    log "SAMP_VOIP desativado; download automatico e ajuste de sv_port ignorados."
 fi
 
-ensure_voice
-rewrite_plugins_cfg
+# Converte os nomes referenciados no server.cfg para .so.
+normalize_plugin_name() {
+    local name="${1##*/}"
+    name="${name##*\\}"
+    case "${name,,}" in
+        *.dll) name="${name:0:${#name}-4}.so" ;;
+        *.so)  ;;
+        *)     name="${name}.so" ;;
+    esac
+    printf '%s' "${name}"
+}
 
-echo "[START] Iniciando servidor..."
-exec ./samp03svr
+declare -a configured_plugins=()
+declare -a plugin_files=()
+declare -a selected_plugins=()
+declare -A selected_lookup=()
+
+while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%%#*}"
+    if [[ "${line}" =~ ^[[:space:]]*plugins([[:space:]]|$) ]]; then
+        read -r -a fields <<< "${line}"
+        for ((i = 1; i < ${#fields[@]}; i++)); do
+            [[ -n "${fields[$i]}" ]] || continue
+            configured_plugins+=("$(normalize_plugin_name "${fields[$i]}")")
+        done
+    fi
+done < "${SERVER_CFG}"
+
+add_plugin_if_present() {
+    local plugin="$1"
+    local source="$2"
+    if [[ -f "${PLUGIN_DIR}/${plugin}" ]]; then
+        if [[ -z "${selected_lookup[${plugin}]+x}" ]]; then
+            selected_plugins+=("${plugin}")
+            selected_lookup["${plugin}"]=1
+        fi
+    elif [[ "${source}" == "configured" ]]; then
+        warn "Plugin listado no server.cfg, mas nao encontrado em ${PLUGIN_DIR}: ${plugin} (ignorado)."
+    fi
+}
+
+# Mantem primeiro a ordem dos plugins que ja estavam no cfg.
+for plugin in "${configured_plugins[@]}"; do
+    add_plugin_if_present "${plugin}" "configured"
+done
+
+# Depois inclui todos os .so encontrados na pasta, sem variaveis individuais.
+shopt -s nullglob nocaseglob
+plugin_files=("${PLUGIN_DIR}"/*.so)
+shopt -u nullglob nocaseglob
+for plugin_path in "${plugin_files[@]}"; do
+    plugin_name="${plugin_path##*/}"
+    add_plugin_if_present "${plugin_name}" "discovered"
+done
+
+plugin_line=""
+if (( ${#selected_plugins[@]} > 0 )); then
+    plugin_line="plugins ${selected_plugins[*]}"
+fi
+
+# Um unico rewrite atomico: remove duplicatas de plugins, define output 1
+# para gerar server_log.txt e define sv_port somente se VOIP_PORT for valido.
+CONFIG_TMP="$(mktemp "${SERVER_CFG}.tmp.XXXXXX")" || fail "Nao foi possivel criar temporario para server.cfg."
+awk \
+    -v replacement="${plugin_line}" \
+    -v voip_enabled="${SV_PORT_ENABLED}" \
+    -v voip_port="${VOIP_PORT}" '
+    /^[[:space:]]*plugins([[:space:]]|$)/ {
+        if (!plugins_done) {
+            if (replacement != "") print replacement
+            plugins_done = 1
+        }
+        next
+    }
+    /^[[:space:]]*output([[:space:]]|$)/ {
+        if (!output_done) print "output 1"
+        output_done = 1
+        next
+    }
+    /^[[:space:]]*sv_port([[:space:]]|$)/ {
+        if (voip_enabled == "1") {
+            if (!sv_port_done) print "sv_port " voip_port
+            sv_port_done = 1
+            next
+        }
+        print
+        next
+    }
+    { print }
+    END {
+        if (!plugins_done && replacement != "") print replacement
+        if (!output_done) print "output 1"
+        if (voip_enabled == "1" && !sv_port_done) print "sv_port " voip_port
+    }
+' "${SERVER_CFG}" > "${CONFIG_TMP}" || fail "Nao foi possivel atualizar server.cfg."
+
+if ! cmp -s "${SERVER_CFG}" "${CONFIG_TMP}"; then
+    chmod --reference="${SERVER_CFG}" "${CONFIG_TMP}" 2>/dev/null || true
+    mv -f -- "${CONFIG_TMP}" "${SERVER_CFG}" || fail "Nao foi possivel substituir server.cfg."
+    CONFIG_TMP=""
+    log "server.cfg atualizado sem gerar backup."
+else
+    rm -f -- "${CONFIG_TMP}"
+    CONFIG_TMP=""
+    log "server.cfg ja estava atualizado."
+fi
+
+# Permissoes simples: nao altera arquivos fora da pasta plugins/.
+find "${PLUGIN_DIR}" -maxdepth 1 -type f -name '*.so' -exec chmod 755 {} + 2>/dev/null || true
+
+if (( ${#selected_plugins[@]} > 0 )); then
+    log "Plugins detectados (${#selected_plugins[@]}):"
+    for plugin in "${selected_plugins[@]}"; do printf '  - %s\n' "${plugin}"; done
+else
+    warn "Nenhum arquivo .so encontrado em ${PLUGIN_DIR}; o servidor iniciara sem plugins."
+fi
+
+# O SA-MP grava o log de console em server_log.txt quando output 1 esta ativo.
+# tail encaminha apenas as novas linhas para stdout do container/Pterodactyl.
+: >> "${SERVER_LOG}"
+if command -v tail >/dev/null 2>&1; then
+    tail -n 0 -F --sleep-interval=0.1 -- "${SERVER_LOG}" &
+    TAIL_PID=$!
+else
+    warn "tail nao esta disponivel; somente stdout/stderr do samp03svr aparecera no console."
+fi
+
+log "Iniciando SA-MP; stdout/stderr e server_log.txt serao exibidos no console..."
+"${SERVER_BIN}" &
+SERVER_PID=$!
+
+SERVER_STATUS=0
+set +e
+while true; do
+    wait "${SERVER_PID}"
+    SERVER_STATUS=$?
+    if ! kill -0 "${SERVER_PID}" 2>/dev/null; then break; fi
+done
+set -e
+
+if (( SERVER_STATUS == 139 )); then
+    warn "SA-MP encerrou com codigo 139 (possivel Segmentation Fault)."
+elif (( SERVER_STATUS != 0 )); then
+    warn "SA-MP encerrou com codigo ${SERVER_STATUS}."
+else
+    log "Processo SA-MP encerrado normalmente."
+fi
+
+sleep 0.2 2>/dev/null || true
+exit "${SERVER_STATUS}"
