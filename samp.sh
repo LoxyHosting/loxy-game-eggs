@@ -5,8 +5,8 @@ cd /home/container
 
 RUNTIME_IMAGE="ghcr.io/ptero-eggs/games:samp"
 SAMPVOICE_VERSION="${SAMPVOICE_VERSION:-1.0.0}"
-SAMPVOICE_SHA256="${SAMPVOICE_SHA256:-FF21093FB5A1D981A7168DEE87EF9E2978D186348B725D2DBB09B2ADC46C964F}"
-VOICE_URL="https://github.com/drysius/Eggs/releases/download/${SAMPVOICE_VERSION}/sampvoice.so"
+SAMPVOICE_SHA256="${SAMPVOICE_SHA256:-ff21093fb5a1d981a7168dee87ef9e2978d186348b725d2dbb09b2adc46c964f}"
+VOICE_URL="https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/sampvoice.so"
 SAMP_VOIP="${SAMP_VOIP:-0}"
 VOIP_PORT="${VOIP_PORT:-0}"
 SAMP_DIAGNOSTIC="${SAMP_DIAGNOSTIC:-0}"
@@ -66,14 +66,19 @@ detect_elf_class() {
 validate_voice_asset() {
   local asset_path="${1:-}"
   if [[ ! -f "${asset_path}" ]]; then return 1; fi
+
+  local expected_hash="${SAMPVOICE_SHA256,,}"
+
   if command -v sha256sum >/dev/null 2>&1; then
     local actual_hash
     actual_hash="$(sha256sum "${asset_path}" | awk '{print $1}')"
-    if [[ "${actual_hash}" != "${SAMPVOICE_SHA256}" ]]; then
-      echo "[ERROR] Hash do SampVoice invalido: ${actual_hash} (esperado ${SAMPVOICE_SHA256})." >&2
+    actual_hash="${actual_hash,,}"
+    if [[ "${actual_hash}" != "${expected_hash}" ]]; then
+      echo "[ERROR] Hash do SampVoice invalido: ${actual_hash} (esperado ${expected_hash})." >&2
       return 2
     fi
   fi
+
   if command -v readelf >/dev/null 2>&1; then
     local asset_class="$(detect_elf_class "${asset_path}")"
     local server_class="$(detect_elf_class ./samp03svr)"
@@ -91,14 +96,20 @@ ensure_voice() {
     if [[ "${SAMP_VOIP:-0}" == "1" ]]; then
       if [[ ! -s "${voice_path}" ]]; then
         echo "[VOICE] sampvoice.so ausente. Baixando versao fixada ${SAMPVOICE_VERSION}..."
+        rm -f "${voice_path}.tmp"
         curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 5 -o "${voice_path}.tmp" "${VOICE_URL}"
         if [[ ! -s "${voice_path}.tmp" ]]; then rm -f "${voice_path}.tmp"; fail "Falha ao baixar o SampVoice. O servidor nao pode iniciar com voice habilitado." 1; fi
         if ! validate_voice_asset "${voice_path}.tmp"; then rm -f "${voice_path}.tmp"; fail "Download do SampVoice invalido ou incompatível com a arquitetura do servidor." 1; fi
         mv -f "${voice_path}.tmp" "${voice_path}"
         chmod 755 "${voice_path}"
       elif ! validate_voice_asset "${voice_path}"; then
+        echo "[VOICE] sampvoice.so inválido ou incompatível. Rebaixando versao fixada ${SAMPVOICE_VERSION}..."
         rm -f "${voice_path}"
-        fail "Plugin SampVoice encontrado, mas invalido ou incompatível. Removido para evitar crash." 1
+        curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 5 -o "${voice_path}.tmp" "${VOICE_URL}"
+        if [[ ! -s "${voice_path}.tmp" ]]; then rm -f "${voice_path}.tmp"; fail "Falha ao rebaixar o SampVoice. O servidor nao pode iniciar com voice habilitado." 1; fi
+        if ! validate_voice_asset "${voice_path}.tmp"; then rm -f "${voice_path}.tmp"; fail "Download do SampVoice invalido ou incompatível com a arquitetura do servidor." 1; fi
+        mv -f "${voice_path}.tmp" "${voice_path}"
+        chmod 755 "${voice_path}"
       fi
       echo "[VOICE] Porta configurada: ${VOIP_PORT}"
     else
