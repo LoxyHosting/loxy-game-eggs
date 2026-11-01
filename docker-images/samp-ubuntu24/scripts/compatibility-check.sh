@@ -1,56 +1,58 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 echo "== Architecture =="
+test "$(dpkg --print-architecture)" = amd64
 dpkg --print-architecture
-dpkg --print-foreign-architectures || true
+dpkg --print-foreign-architectures | grep -qx i386
+dpkg --print-foreign-architectures
 
-echo "== ldconfig libraries =="
-ldconfig -p | grep -E 'libstdc\+\+|libgcc_s|libcurl|libssl|libmysql|libmariadb|libsqlite|zlib|libidn2|libnghttp2|libssh2|libpsl|libxml2|libfreetype' || true
-
-echo "== Critical packages =="
-for pkg in \
-  libc6 \
-  libc6:i386 \
-  lib32gcc-s1 \
-  lib32stdc++6 \
-  libstdc++6 \
-  libstdc++6:i386 \
-  libgcc-s1 \
-  libgcc-s1:i386 \
-  zlib1g \
-  zlib1g:i386 \
-  libcurl4 \
-  libcurl4:i386 \
-  libssl3 \
-  libssl3:i386 \
-  libmariadb3 \
-  libmariadb3:i386 \
-  libsqlite3-0 \
-  libsqlite3-0:i386; do
-  if dpkg -s "$pkg" >/dev/null 2>&1; then
-    echo "OK $pkg"
-  else
-    echo "MISSING $pkg"
-  fi
+echo "== Dynamic libraries by architecture =="
+ldconfig -p
+for library in \
+  libc.so.6 \
+  libstdc++.so.6 \
+  libgcc_s.so.1 \
+  libz.so.1 \
+  libatomic.so.1 \
+  libcurl.so.4 \
+  libssl.so.3 \
+  libnghttp2.so.14 \
+  libidn2.so.0 \
+  libpsl.so.5 \
+  libssh2.so.1 \
+  librtmp.so.1 \
+  libmysqlclient.so.21 \
+  libsqlite3.so.0 \
+  libgomp.so.1 \
+  libexpat.so.1 \
+  libtinfo.so.6 \
+  libncurses.so.6 \
+  libuuid.so.1; do
+  for architecture in '(libc6,x86-64)' '(libc6)'; do
+    if ! ldconfig -p | grep -F "$library" | grep -Fq "$architecture"; then
+      echo "Missing ${library} for ${architecture}." >&2
+      exit 1
+    fi
+  done
+  echo "OK $library (amd64, i386)"
 done
+
+if ldconfig -p | grep -F 'libmariadb.so.3' | grep -Fq '(libc6,x86-64)'; then
+  echo "OK libmariadb.so.3 (amd64; no Noble i386 package)"
+fi
 
 echo "== Plugin compatibility directories =="
 for dir in /opt/loxy-compat/lib /opt/loxy-compat/lib32 /usr/lib32 /lib32; do
-  if [ -d "$dir" ]; then
-    echo "OK $dir"
-  else
-    echo "MISSING $dir"
-  fi
+  test -d "$dir"
+  echo "OK $dir"
 done
 
-echo "== Legacy runtime warnings =="
-for pkg in libssl1.1:i386 libgcc1:i386 libmysqlclient18:i386; do
-  if dpkg -s "$pkg" >/dev/null 2>&1; then
-    echo "LEGACY PRESENT $pkg"
+echo "== Legacy packages unavailable in Ubuntu 24.04 =="
+for package in libssl1.1 libgcc1 libmysqlclient18 libtinfo5 libncurses5; do
+  if dpkg-query -s "$package" >/dev/null 2>&1; then
+    echo "PRESENT $package"
   else
-    echo "UNAVAILABLE in Ubuntu 24.04 (compatibility isolated via /opt/loxy-compat): $pkg"
+    echo "UNAVAILABLE $package"
   fi
 done
-
-echo "== Compatibility check complete =="

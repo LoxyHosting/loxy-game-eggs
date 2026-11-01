@@ -6,53 +6,30 @@ ENV TZ=Etc/UTC \
     LC_ALL=C.UTF-8 \
     PTERODACTYL_CONTAINER=1 \
     HOME=/home/container \
-    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib32:/usr/lib32:/lib32:/opt/loxy-compat/lib:/opt/loxy-compat/lib32${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} \
+    LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib32:/usr/lib32:/lib32:/opt/loxy-compat/lib:/opt/loxy-compat/lib32 \
     SA_MP_COMPAT_PATH=/opt/loxy-compat \
     PLUGIN_PATH=/home/container/plugins
 
 WORKDIR /home/container
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        dnsutils \
-        file \
-        git \
-        iproute2 \
-        locales \
-        lsof \
-        net-tools \
-        patchelf \
-        procps \
-        psmisc \
-        tar \
-        tzdata \
-        unzip \
-        wget \
-        xz-utils \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
-    && echo ${TZ} > /etc/timezone \
-    && locale-gen en_US.UTF-8 || true
-
-RUN dpkg --add-architecture i386
-
 COPY scripts/install-dependencies.sh /tmp/install-dependencies.sh
 COPY scripts/compatibility-check.sh /tmp/compatibility-check.sh
 COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN chmod +x /tmp/install-dependencies.sh /tmp/compatibility-check.sh /usr/local/bin/entrypoint.sh \
-    && /tmp/install-dependencies.sh \
-    && /tmp/compatibility-check.sh \
-    && rm -f /tmp/install-dependencies.sh /tmp/compatibility-check.sh
+RUN set -eux; \
+    chmod +x /tmp/install-dependencies.sh /tmp/compatibility-check.sh /usr/local/bin/entrypoint.sh; \
+    /tmp/install-dependencies.sh; \
+    /tmp/compatibility-check.sh; \
+    rm -f /tmp/install-dependencies.sh /tmp/compatibility-check.sh; \
+    ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime; \
+    printf '%s\n' "${TZ}" > /etc/timezone; \
+    locale-gen en_US.UTF-8
 
-RUN mkdir -p /opt/loxy-compat/lib /opt/loxy-compat/lib32 /home/container /home/container/plugins /tmp/servers /var/log/samp \
-    && printf '%s\n' '/usr/local/lib' '/usr/local/lib32' '/usr/lib32' '/lib32' '/opt/loxy-compat/lib' '/opt/loxy-compat/lib32' > /etc/ld.so.conf.d/loxy-compat.conf \
-    && ldconfig \
-    && groupadd --gid 1000 container || true \
-    && useradd --uid 1000 --gid 1000 --home-dir /home/container --shell /bin/bash container || true \
-    && chown -R container:container /home/container /home/container/plugins /tmp/servers /var/log/samp /opt/loxy-compat
+RUN set -eux; \
+    mkdir -p /home/container/plugins /tmp/servers /var/log/samp; \
+    if ! getent group container >/dev/null; then groupadd container; fi; \
+    if ! getent passwd container >/dev/null; then useradd --create-home --home-dir /home/container --gid container --shell /bin/bash container; fi; \
+    chown -R container:container /home/container /tmp/servers /var/log/samp /opt/loxy-compat
 
 USER container
 

@@ -19,6 +19,7 @@ apt-get install -y --no-install-recommends \
   lsof \
   locales \
   net-tools \
+  netcat-openbsd \
   patchelf \
   procps \
   psmisc \
@@ -32,8 +33,6 @@ apt-get install -y --no-install-recommends \
   lib32gcc-s1 \
   lib32stdc++6 \
   lib32z1 \
-  lib32bz2-1.0 \
-  lib32asound2 \
   libstdc++6 \
   libstdc++6:i386 \
   libgcc-s1 \
@@ -42,22 +41,21 @@ apt-get install -y --no-install-recommends \
   zlib1g:i386 \
   libatomic1 \
   libatomic1:i386 \
-  libcurl4 \
-  libcurl4:i386 \
-  libssl3 \
-  libssl3:i386 \
+  libcurl4t64 \
+  libcurl4t64:i386 \
+  libssl3t64 \
+  libssl3t64:i386 \
   libnghttp2-14 \
   libnghttp2-14:i386 \
   libidn2-0 \
   libidn2-0:i386 \
   libpsl5 \
   libpsl5:i386 \
-  libssh2-1 \
-  libssh2-1:i386 \
+  libssh2-1t64 \
+  libssh2-1t64:i386 \
   librtmp1 \
   librtmp1:i386 \
   libmariadb3 \
-  libmariadb3:i386 \
   libmysqlclient21 \
   libmysqlclient21:i386 \
   libsqlite3-0 \
@@ -68,18 +66,16 @@ apt-get install -y --no-install-recommends \
   libexpat1:i386 \
   libtinfo6 \
   libtinfo6:i386 \
-  libtinfo5:i386 \
   libncurses6 \
   libncurses6:i386 \
-  libncurses5:i386 \
   libuuid1 \
   libuuid1:i386 \
-  libaio1 \
-  libaio1:i386 \
-  libdb5.3 \
-  libdb5.3:i386 \
-  libbz2-1.5 \
-  libbz2-1.5:i386 \
+  libaio1t64 \
+  libaio1t64:i386 \
+  libdb5.3t64 \
+  libdb5.3t64:i386 \
+  libbz2-1.0 \
+  libbz2-1.0:i386 \
   libfreetype6 \
   libfreetype6:i386 \
   libudev1 \
@@ -88,7 +84,8 @@ apt-get install -y --no-install-recommends \
 # Keep a dedicated plugin-compat directory for old 32-bit plugins and private libs.
 mkdir -p /opt/loxy-compat/lib /opt/loxy-compat/lib32
 
-# Keep base distribution clean: avoid forcing unsupported legacy packages into the system.
+# Ubuntu 24.04 no longer provides libssl1.1, libgcc1, libmysqlclient18,
+# libtinfo5, or libncurses5. Do not mix packages from another release.
 rm -rf /var/lib/apt/lists/*
 
 printf '%s\n' '/usr/local/lib' '/usr/local/lib32' '/usr/lib32' '/lib32' '/opt/loxy-compat/lib' '/opt/loxy-compat/lib32' > /etc/ld.so.conf.d/loxy-compat.conf

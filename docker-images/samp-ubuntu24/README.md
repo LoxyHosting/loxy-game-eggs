@@ -1,16 +1,13 @@
-# SA-MP Ubuntu 24.04 Image
+# SA-MP Ubuntu 24.04 image
 
-Este diretório contém uma imagem Docker para hospedagem profissional de servidores SA-MP e plugins compatíveis no Ubuntu 24.04 LTS, com suporte a arquiteturas 32-bit e 64-bit e preparação para Pterodactyl/Wings.
+Local Docker image for SA-MP servers and 32-bit/64-bit Linux plugins on Ubuntu
+24.04 LTS. The build targets `linux/amd64`, enables the `i386` package
+architecture, and runs as the unprivileged `container` user.
 
-## Objetivo
+The image is built and stored in the local Docker Engine. The build and test
+scripts do not log in to or push to Docker Hub or any other registry.
 
-- Base Ubuntu 24.04 LTS
-- Suporte multiarch `i386` e `amd64`
-- Compatibilidade com plugins SA-MP antigos e modernos
-- Bibliotecas de runtime para executáveis ELF 32 e 64 bits
-- Execução em ambiente Pterodactyl com usuário não-root
-
-## Estrutura
+## Files
 
 ```text
 docker-images/samp-ubuntu24/
@@ -26,117 +23,114 @@ docker-images/samp-ubuntu24/
 └── tests/
     ├── test-architecture.sh
     ├── test-libraries.sh
+    ├── test-plugins.sh
     └── test-pterodactyl.sh
 ```
 
-## Bibliotecas instaladas
+## Runtime libraries
 
-### Bibliotecas principais
+The image installs the available Ubuntu 24.04 runtime packages for both
+`amd64` and `i386`, including:
 
-- `libc6` / `libc6:i386`
-- `libstdc++6` / `libstdc++6:i386`
-- `libgcc-s1` / `libgcc-s1:i386`
-- `zlib1g` / `zlib1g:i386`
-- `libatomic1` / `libatomic1:i386`
-- `libcurl4` / `libcurl4:i386`
-- `libssl3` / `libssl3:i386`
-- `libnghttp2-14` / `libnghttp2-14:i386`
-- `libidn2-0` / `libidn2-0:i386`
-- `libpsl5` / `libpsl5:i386`
-- `libssh2-1` / `libssh2-1:i386`
-- `librtmp1` / `librtmp1:i386`
+- `libc6`, `libstdc++6`, `libgcc-s1`, `zlib1g`, and `libatomic1`
+- `libcurl4t64`, `libssl3t64`, `libnghttp2-14`, `libidn2-0`, `libpsl5`,
+  `libssh2-1t64`, and `librtmp1`
+- `libmariadb3` (amd64), `libmysqlclient21` (amd64 and i386), and
+  `libsqlite3-0`
+- `libgomp1`, `libexpat1`, `libtinfo6`, `libncurses6`, and `libuuid1`
+- `libaio1t64`, `libdb5.3t64`, `libbz2-1.0`, `libfreetype6`, and `libudev1`
+- `lib32gcc-s1`, `lib32stdc++6`, and `lib32z1`
 
-### Bibliotecas de banco de dados
+Diagnostic tools include `file`, `binutils`, `patchelf`, `procps`, `curl`,
+`wget`, `unzip`, `tar`, `xz-utils`, `iproute2`, `net-tools`, `dnsutils`,
+`lsof`, `psmisc`, and `netcat-openbsd`.
 
-- `libmariadb3` / `libmariadb3:i386`
-- `libmysqlclient21` / `libmysqlclient21:i386`
-- `libsqlite3-0` / `libsqlite3-0:i386`
+### Legacy package limitations
 
-### Bibliotecas adicionais
+Ubuntu 24.04 Noble does not provide these packages in its standard
+repositories:
 
-- `libgomp1` / `libgomp1:i386`
-- `libexpat1` / `libexpat1:i386`
-- `libtinfo6` / `libtinfo6:i386`
-- `libncurses6` / `libncurses6:i386`
-- `libncurses5:i386`
-- `libuuid1` / `libuuid1:i386`
-- `lib32stdc++6`
-- `ca-certificates`
-- `tzdata`
-- `locales`
+- `libssl1.1` (replaced by `libssl3`)
+- `libgcc1` (replaced by `libgcc-s1`)
+- `libmysqlclient18` (the image provides `libmysqlclient21`)
+- `libtinfo5` and `libncurses5` (the image provides `libtinfo6` and
+  `libncurses6`)
 
-## Bibliotecas legadas indisponíveis ou não instaladas
+The image does not mix repositories from other Ubuntu releases, replace
+essential libraries, or create compatibility symlinks. A plugin that requires
+one of these exact legacy ABIs must supply a compatible private library in
+`/opt/loxy-compat/lib` or `/opt/loxy-compat/lib32`; this directory is included in
+the dynamic loader search path. Do not copy untrusted libraries into a running
+server.
 
-Ubuntu 24.04 não oferece suporte oficial para todas as versões legadas frequentemente exigidas por plugins antigos do SA-MP. As bibliotecas abaixo são conhecidas como incompatíveis ou indisponíveis na base oficial e não devem ser forçadas para o sistema:
+The Noble repository does not publish `libmariadb3:i386`; its i386 MySQL
+client runtime is provided by `libmysqlclient21:i386` instead.
 
-- `libssl1.1:i386` — indisponível em Ubuntu 24.04 na base do sistema
-- `libgcc1:i386` — substituída por `libgcc-s1` em releases modernas do Ubuntu
-- `libmysqlclient18:i386` — removida do repositório oficial em Ubuntu 24.04
+The image does not bundle SA-MP plugins. Its plugin check creates a synthetic
+32-bit shared object to exercise dependency resolution for common C/C++,
+MySQL, curl, OpenSSL, and SQLite ABIs. It is not a substitute for testing the
+specific plugin binaries used by a server. No third-party plugin binary is
+downloaded or redistributed by these scripts.
 
-Quando uma dependência antiga não está disponível, a abordagem segura é isolar o binário/plugin em um diretório específico e apontar as bibliotecas locais sem sobrescrever as bibliotecas do sistema.
-
-## Como construir
+## Build locally
 
 ```bash
-cd docker-images/samp-ubuntu24
-chmod +x build.sh scripts/*.sh tests/*.sh
+cd /opt/loxy-docker/samp-ubuntu24
 ./build.sh
 ```
 
-Para uma tag específica:
+The script builds for `linux/amd64` and tags the same local image as:
+
+- `loxyhosting/samp-ubuntu24:latest`
+- `loxyhosting/samp-ubuntu24:ubuntu24`
+- `loxyhosting/samp-ubuntu24:stable`
+
+To select another build tag:
 
 ```bash
-IMAGE_NAME=loxyhosting/samp-ubuntu24 TAG_REF=ubuntu24 ./build.sh
+TAG_REF=latest ./build.sh
 ```
 
-## Como testar
+There is deliberately no `docker push` command.
+
+## Test
+
+Run after building:
 
 ```bash
-IMAGE_NAME=loxyhosting/samp-ubuntu24 TAG_REF=ubuntu24 ./test.sh
+./test.sh
 ```
 
-Também é possível executar os testes específicos:
+The suite executes real ELF32 and ELF64 binaries, resolves installed
+dependencies, checks a synthetic 32-bit plugin ABI, and tests non-root startup,
+environment variables, writable container storage, UDP packet delivery, and
+SIGTERM shutdown. To check a real plugin's architecture and dynamic
+dependencies without running plugin code, set
+`PLUGIN_TEST_BINARY=/path/to/plugin.so ./test.sh`. This checks dependencies
+with `ldd`; it does not load the plugin into a SA-MP server.
+
+## Pterodactyl/Wings
+
+- Working directory: `/home/container`
+- Default image user: `container` (non-root); root execution is rejected
+- The entrypoint uses `exec` to forward the Wings startup command and signals
+- Environment variables are inherited, including the `STARTUP` variable
+- UDP ports 7777, 7778, and 30120 are declared; publish/configure the actual
+  server port in the egg/allocation as usual
+- No systemd or extra daemon is started
+
+Use `loxyhosting/samp-ubuntu24:latest` (or either of the other local tags) in
+the egg's Docker image field. The egg and Wings configuration are not modified
+by this project.
+
+## Save or load a local backup
 
 ```bash
-./tests/test-architecture.sh
-./tests/test-libraries.sh
-./tests/test-pterodactyl.sh
-```
-
-## Publicação
-
-```bash
-docker login
-
-docker tag loxyhosting/samp-ubuntu24:latest loxyhosting/samp-ubuntu24:ubuntu24
-docker tag loxyhosting/samp-ubuntu24:latest loxyhosting/samp-ubuntu24:stable
-docker push loxyhosting/samp-ubuntu24:latest
-docker push loxyhosting/samp-ubuntu24:ubuntu24
-docker push loxyhosting/samp-ubuntu24:stable
-```
-
-## Uso no Pterodactyl
-
-- A imagem usa um usuário não-root: `container`
-- O diretório de trabalho padrão é `/home/container`
-- O entrypoint aceita execução de scripts de startup ou comandos passados diretamente
-- Variáveis de ambiente do Pterodactyl continuam funcionais
-- O container foi preparado para manter o processo principal ativo enquanto o servidor estiver em execução
-
-Exemplo de comando de execução:
-
-```bash
-docker run --rm -it \
-  -v "$PWD:/home/container" \
-  -w /home/container \
-  --user 1000:1000 \
+mkdir -p /opt/loxy-docker/backups
+docker save -o /opt/loxy-docker/backups/samp-ubuntu24.tar \
   loxyhosting/samp-ubuntu24:latest
+docker load -i /opt/loxy-docker/backups/samp-ubuntu24.tar
 ```
 
-## Observações de compatibilidade
-
-Não é suficiente apenas construir a imagem. A compatibilidade real precisa ser confirmada com testes de arquitetura, bibliotecas, plugins e carga no Pterodactyl.
-
-## Disclaimer
-
-Este projeto foi preparado para ser salvo no repositório existente do cliente e deve ser integrado ao passo de publicação do Docker Hub ou em um registro privado conforme a política da infraestrutura.
+Keep the backup outside this source tree; image archives must not be committed
+to Git.
