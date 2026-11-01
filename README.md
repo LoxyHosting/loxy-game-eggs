@@ -13,3 +13,7 @@ Variáveis suportadas:
 - `SAMPVOICE_VERSION` para fixar a versão do plugin e `SAMPVOICE_SHA256` para validar o arquivo antes de substituir o plugin instalado.
 
 A versão fixa do SampVoice usada pela egg é `1.0.0`, com hash SHA-256 validado antes de instalar o arquivo no diretório de plugins.
+
+## Acelerador de downloads MTA
+
+Quando `EXPRESS_PORT` estiver configurada, `mta.sh` baixa e inicia o acelerador HTTP binário-seguro, atualiza `httpdownloadurl` e aguarda uma resposta HTTP local antes de iniciar o MTA. A porta também deve estar atribuída ao servidor como allocation do Pterodactyl para que o Wings a publique. Se o listener não ficar pronto, a inicialização para e exibe `accelerator.log` e `accelerator_error.log`. Os arquivos são lidos como bytes e comprimidos sem corromper imagens ou outros recursos binários.
