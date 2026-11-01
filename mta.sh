@@ -45,7 +45,8 @@ if [[ "${EXPRESS_PORT:-}" =~ ^[0-9]+$ ]] \
     fi
 
     echo "[ACCELERATOR] Baixando servidor HTTP binario-seguro..."
-    if curl -fLsS --retry 3 --retry-delay 2 \
+    if curl -fLsS --connect-timeout 10 --max-time 60 \
+        --retry 3 --retry-delay 2 \
         -o "./mta-accelerator.py.update" "${ACCELERATOR_URL}"; then
         if python3 -c 'import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())' \
             "./mta-accelerator.py.update"; then

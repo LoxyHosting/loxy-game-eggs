@@ -67,6 +67,16 @@
             "user_editable": false,
             "rules": "nullable|integer|between:1,65535",
             "field_type": "text"
+        },
+        {
+            "name": "Host público do acelerador",
+            "description": "IP público ou domínio usado pelos jogadores para baixar os recursos via acelerador. Deixe vazio para detectar automaticamente.",
+            "env_variable": "MTA_DOWNLOAD_HOST",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:253",
+            "field_type": "text"
         }
     ]
 }
