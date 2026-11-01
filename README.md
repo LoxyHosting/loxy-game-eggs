@@ -13,3 +13,11 @@ Variáveis suportadas:
 - `SAMPVOICE_VERSION` para fixar a versão do plugin e `SAMPVOICE_SHA256` para validar o arquivo antes de substituir o plugin instalado.
 
 A versão fixa do SampVoice usada pela egg é `1.0.0`, com hash SHA-256 validado antes de instalar o arquivo no diretório de plugins.
+
+## Acelerador de downloads MTA
+
+O `mta.sh` baixa `mta-accelerator.py` do repositório, valida o script antes de substituir a cópia local e só inicia o MTA depois que o listener HTTP do acelerador responde. O servidor lê os arquivos do cache do MTA como bytes e transmite gzip sem corromper imagens ou outros recursos binários; arquivos grandes são processados com uso de memória limitado.
+
+Configure `EXPRESS_PORT` com uma allocation adicional do Pterodactyl. Opcionalmente, defina `MTA_DOWNLOAD_HOST` para o IP público ou domínio que os jogadores usarão. Se estiver vazio, o acelerador tenta `SERVER_IP` e depois detecta o IP público. Os requests e erros do processo são registrados em `accelerator.log` e `accelerator_error.log`; falhas de inicialização também são exibidas no console.
+
+Os testes locais podem ser executados com `python3 -m unittest discover -s tests -p 'test_mta_accelerator.py' -v`.
