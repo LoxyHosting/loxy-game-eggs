@@ -7,7 +7,7 @@ signal_container=""
 
 cleanup() {
   if [ -n "${udp_container}" ]; then
-    docker stop "${udp_container}" >/dev/null 2>&1 || true
+    docker rm --force "${udp_container}" >/dev/null 2>&1 || true
   fi
   if [ -n "${signal_container}" ]; then
     docker stop --time 5 "${signal_container}" >/dev/null 2>&1 || true
@@ -65,6 +65,7 @@ if ! docker logs "${udp_container}" 2>&1 | grep -q 'loxy-samp-udp-test'; then
 fi
 echo "UDP port publishing and packet delivery passed."
 docker stop "${udp_container}" >/dev/null
+docker rm "${udp_container}" >/dev/null
 udp_container=""
 
 signal_container="$(docker run -d --rm "${IMAGE_REF}" /bin/bash -c \
