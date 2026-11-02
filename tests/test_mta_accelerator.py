@@ -1,4 +1,3 @@
-import gzip
 import http.client
 import importlib.util
 import os
@@ -120,27 +119,50 @@ class AcceleratorTests(unittest.TestCase):
 
         self.assertIsNone(accelerator.find_resource("/linked.png"))
 
-    def test_http_serves_binary_gzip_and_correct_headers(self):
-        payload = b"\x89PNG\r\n\x1a\n" + os.urandom(2 * 1024 * 1024)
-        resource = self.cache / "ip2c/client/images/flags/iq.png"
-        resource.parent.mkdir(parents=True)
-        resource.write_bytes(payload)
-
+    def test_http_serves_game_assets_byte_for_byte_without_transforming_them(self):
+        payloads = {
+            "ip2c/client/images/flags/iq.png": (
+                "image/png",
+                b"\x89PNG\r\n\x1a\n" + os.urandom(2 * 1024 * 1024),
+            ),
+            "resources/skins/player.txd": (
+                None,
+                b"TXD\x00" + os.urandom(128 * 1024),
+            ),
+            "resources/skins/player.dff": (
+                None,
+                b"DFF\x00" + os.urandom(64 * 1024),
+            ),
+            "resources/skins/player.col": (
+                None,
+                b"COL\x00" + os.urandom(4096),
+            ),
+        }
+        for relative_path, (content_type, payload) in payloads.items():
+            resource = self.cache / relative_path
+            resource.parent.mkdir(parents=True, exist_ok=True)
+            resource.write_bytes(payload)
         server = self._start_server()
-
         connection = http.client.HTTPConnection(
             "127.0.0.1", server.server_port, timeout=5
         )
         self.addCleanup(connection.close)
-        connection.request("GET", "/ip2c/client/images/flags/iq.png")
-        response = connection.getresponse()
-        compressed = response.read()
+        for relative_path, (content_type, payload) in payloads.items():
+            with self.subTest(path=relative_path):
+                connection.request("GET", f"/{relative_path}")
+                response = connection.getresponse()
+                body = response.read()
 
-        self.assertEqual(response.status, 200)
-        self.assertEqual(response.getheader("Content-Type"), "image/png")
-        self.assertEqual(response.getheader("Content-Encoding"), "gzip")
-        self.assertEqual(response.getheader("Content-Length"), str(len(compressed)))
-        self.assertEqual(gzip.decompress(compressed), payload)
+                self.assertEqual(response.status, 200)
+                response_type = response.getheader("Content-Type")
+                if content_type is None:
+                    self.assertTrue(response_type)
+                else:
+                    self.assertEqual(response_type, content_type)
+                self.assertIsNone(response.getheader("Content-Encoding"))
+                self.assertEqual(response.getheader("Cache-Control"), "no-transform")
+                self.assertEqual(response.getheader("Content-Length"), str(len(payload)))
+                self.assertEqual(body, payload)
 
     def test_http_head_and_missing_resources(self):
         payload = b"resource payload"
@@ -157,6 +179,7 @@ class AcceleratorTests(unittest.TestCase):
         head_length = head_response.getheader("Content-Length")
         self.assertEqual(head_response.status, 200)
         self.assertEqual(head_response.read(), b"")
+        self.assertIsNone(head_response.getheader("Content-Encoding"))
 
         connection.request("GET", "/missing.dat")
         missing_response = connection.getresponse()
@@ -177,7 +200,7 @@ class AcceleratorTests(unittest.TestCase):
         get_response = connection.getresponse()
         body = get_response.read()
         self.assertEqual(head_length, str(len(body)))
-        self.assertEqual(gzip.decompress(body), payload)
+        self.assertEqual(body, payload)
 
 
 if __name__ == "__main__":

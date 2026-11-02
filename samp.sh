@@ -6,7 +6,7 @@ set -Eeuo pipefail
 # - Carrega automaticamente todos os .so da pasta plugins/.
 # - SAMP_VOIP=1 baixa sampvoice.so apenas se estiver ausente/vazio e aplica VOIP_PORT.
 # - Nao sobrescreve plugins existentes e nao cria backups persistentes.
-# - Encaminha stdout/stderr do servidor e server_log.txt ao console do Pterodactyl.
+# - Exibe server_log.txt no console e preserva stderr sem duplicar o stdout.
 
 SERVER_DIR="${SERVER_DIR:-/home/container}"
 SERVER_BIN="./samp03svr"
@@ -224,17 +224,22 @@ else
 fi
 
 # O SA-MP grava o log de console em server_log.txt quando output 1 esta ativo.
-# tail encaminha apenas as novas linhas para stdout do container/Pterodactyl.
+# O arquivo e a unica fonte de logs normais para evitar duplicar o stdout do binario.
 : >> "${SERVER_LOG}"
 if command -v tail >/dev/null 2>&1; then
     tail -n 0 -F --sleep-interval=0.1 -- "${SERVER_LOG}" &
     TAIL_PID=$!
 else
-    warn "tail nao esta disponivel; somente stdout/stderr do samp03svr aparecera no console."
+    warn "tail nao esta disponivel; stdout/stderr do samp03svr sera exibido diretamente no console."
 fi
 
-log "Iniciando SA-MP; stdout/stderr e server_log.txt serao exibidos no console..."
-"${SERVER_BIN}" &
+if [[ -n "${TAIL_PID}" ]]; then
+    log "Iniciando SA-MP; server_log.txt sera exibido no console sem linhas duplicadas..."
+    "${SERVER_BIN}" >/dev/null &
+else
+    log "Iniciando SA-MP; stdout/stderr serao exibidos diretamente no console..."
+    "${SERVER_BIN}" &
+fi
 SERVER_PID=$!
 
 SERVER_STATUS=0

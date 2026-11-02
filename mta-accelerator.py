@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import gzip
 import ipaddress
 import mimetypes
 import os
@@ -22,7 +21,6 @@ NO_CLIENT_CACHE = os.getenv("HTTPCLIENTNOCLIENTCACHE", "true").strip().lower() i
     "yes",
     "on",
 }
-SPOOL_LIMIT = 1024 * 1024
 CHUNK_SIZE = 256 * 1024
 
 
@@ -158,21 +156,6 @@ def find_resource(request_path):
     return None
 
 
-def _gzip_to_spooled_file(resource):
-    compressed_file = tempfile.SpooledTemporaryFile(max_size=SPOOL_LIMIT, mode="w+b")
-    try:
-        with resource.open("rb") as source:
-            with gzip.GzipFile(fileobj=compressed_file, mode="wb", mtime=0) as compressor:
-                shutil.copyfileobj(source, compressor, length=CHUNK_SIZE)
-        compressed_file.seek(0, os.SEEK_END)
-        compressed_size = compressed_file.tell()
-        compressed_file.seek(0)
-        return compressed_file, compressed_size
-    except BaseException:
-        compressed_file.close()
-        raise
-
-
 class AcceleratorHandler(BaseHTTPRequestHandler):
     server_version = "MTA-Accelerator"
     protocol_version = "HTTP/1.1"
@@ -200,20 +183,21 @@ class AcceleratorHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            compressed_file, compressed_size = _gzip_to_spooled_file(resource)
+            source = resource.open("rb")
         except OSError:
-            self.send_error(500, "Unable to read or compress resource")
+            self.send_error(500, "Unable to read resource")
             return
 
-        try:
+        with source:
+            resource_size = os.fstat(source.fileno()).st_size
             safe_filename = re.sub(r"[^A-Za-z0-9._-]", "_", resource.name)
             self.send_response(200)
             self.send_header(
                 "Content-Type",
                 mimetypes.guess_type(resource.name)[0] or "application/octet-stream",
             )
-            self.send_header("Content-Encoding", "gzip")
-            self.send_header("Content-Length", str(compressed_size))
+            self.send_header("Content-Length", str(resource_size))
+            self.send_header("Cache-Control", "no-transform")
             self.send_header(
                 "Content-Disposition",
                 f'attachment; filename="{safe_filename}"; '
@@ -222,11 +206,10 @@ class AcceleratorHandler(BaseHTTPRequestHandler):
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             if not head_only:
-                shutil.copyfileobj(compressed_file, self.wfile, length=CHUNK_SIZE)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        finally:
-            compressed_file.close()
+                try:
+                    shutil.copyfileobj(source, self.wfile, length=CHUNK_SIZE)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
 
     def log_message(self, format_string, *args):
         print(
