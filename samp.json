@@ -10,7 +10,7 @@
     "description": "SA-MP Connect para Pterodactyl com runtime Debian 12/Bookworm. O startup e executado diretamente do GitHub (raw.githubusercontent.com), sem copiar samp.sh para os arquivos do servidor. Carrega automaticamente todos os plugins .so, converte referencias .dll para .so, exibe logs no console e mantem SampVoice opcional com download automatico quando SAMP_VOIP=1.",
     "features": [],
     "docker_images": {
-        "SA-MP - Debian 12 + i386 (Recomendado)": "ghcr.io/ptero-eggs/games:samp"
+        "SA-MP - Ubuntu 24.04 amd64/i386 (Recomendado)": "loxyhosting/samp-ubuntu24:stable"
     },
     "file_denylist": [],
     "startup": "bash -o pipefail -c 'curl -fLsS --retry 3 --retry-delay 2 --connect-timeout 10 https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/samp.sh | bash'",

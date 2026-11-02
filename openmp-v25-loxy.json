@@ -10,7 +10,7 @@
     "description": "Egg Open-MP para Pterodactyl usando config.json como configuracao principal. server.cfg nao e obrigatorio. Runtime Debian 12 com i386, reparo automatico do omp-server sem usar /tmp e startup remoto da Loxy Systems.",
     "features": [],
     "docker_images": {
-        "OpenMP Debian 12": "ghcr.io/ptero-eggs/games:samp"
+        "OpenMP Ubuntu 24.04 amd64/i386": "loxyhosting/samp-ubuntu24:stable"
     },
     "file_denylist": [],
     "startup": "bash <(curl -fsSL --retry 3 --retry-delay 2 https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/openmp.sh)",
