@@ -44,7 +44,7 @@ cleanup() {
         wait "${SERVER_PID}" 2>/dev/null || true
     fi
     if command -v wineserver >/dev/null 2>&1; then
-        WINEPREFIX="${WINEPREFIX}" WINEARCH="${WINEARCH}" wineserver -k 2>/dev/null || true
+        WINEPREFIX="${WINEPREFIX}" wineserver -k 2>/dev/null || true
     fi
     return "${status}"
 }
@@ -287,7 +287,7 @@ fi
 WINE_RUNTIME_LOG="${WINE_RUNTIME_LOG:-${SERVER_DIR}/wine-runtime.log}"
 : > "${SERVER_LOG}"
 touch "${WINE_RUNTIME_LOG}"
-log "Wine version: $(" ${WINE_BIN}" --version 2>/dev/null || printf 'indisponivel')"
+log "Wine version: $("${WINE_BIN}" --version 2>/dev/null || printf 'indisponivel')"
 
 if ! command -v tail >/dev/null 2>&1; then
     fail "O comando tail (coreutils) e necessario para transmitir server_log.txt ao console."
@@ -318,7 +318,7 @@ else
 fi
 
 if command -v wineserver >/dev/null 2>&1; then
-    WINEPREFIX="${WINEPREFIX}" WINEARCH="${WINEARCH}" wineserver -k 2>/dev/null || true
+    WINEPREFIX="${WINEPREFIX}" wineserver -k 2>/dev/null || true
 fi
 
 if [[ -n "${TAIL_PID}" ]] && kill -0 "${TAIL_PID}" 2>/dev/null; then
