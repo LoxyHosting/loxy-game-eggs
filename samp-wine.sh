@@ -64,10 +64,16 @@ trap 'printf "[SAMP-WINE] [ERRO] Falha no startup (linha %s, codigo %s).\\n" "$L
 
 cd "${SERVER_DIR}" || fail "Nao foi possivel acessar ${SERVER_DIR}."
 mkdir -p "${PLUGIN_DIR}" "${SERVER_DIR}/.wine" || fail "Nao foi possivel preparar diretorios do servidor."
-export WINEPREFIX WINEARCH HOME="${SERVER_DIR}"
+export WINEPREFIX HOME="${SERVER_DIR}"
+WINE_BIN="$(command -v wine || command -v wine64 || true)"
+[[ -n "${WINE_BIN}" ]] || fail "Wine nao foi encontrado na imagem Docker (wine/wine64)."
 
-if ! command -v wine >/dev/null 2>&1; then
-    fail "Wine nao esta instalado na imagem Docker. Reinstale a imagem de runtime do Wine para esta egg."
+if ! command -v wineboot >/dev/null 2>&1; then
+    fail "wineboot nao foi encontrado. A imagem precisa incluir as ferramentas completas do Wine."
+fi
+
+if ! "${WINE_BIN}" --version >/dev/null 2>&1; then
+    fail "O Wine foi encontrado, mas nao conseguiu iniciar. Verifique as bibliotecas da imagem Docker."
 fi
 
 if [[ ! -f "${SERVER_BIN}" ]]; then
@@ -78,9 +84,17 @@ if [[ ! -f "${SERVER_CFG}" ]]; then
     fail "server.cfg nao encontrado em ${SERVER_DIR}. Crie ou instale a configuracao padrao antes do startup."
 fi
 
-if [[ ! -d "${WINEPREFIX}/drive_c" ]]; then
-    log "Inicializando prefixo Wine em ${WINEPREFIX}..."
-    wineboot --init >/dev/null 2>&1 || true
+if [[ ! -f "${WINEPREFIX}/system.reg" ]]; then
+    if [[ -e "${WINEPREFIX}" ]] && [[ -n "$(find "${WINEPREFIX}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+        warn "O prefixo Wine existe, mas nao possui system.reg. Ele pode estar incompleto."
+    fi
+    log "Criando prefixo Wine novo (${WINEARCH}) em ${WINEPREFIX}..."
+    WINEARCH="${WINEARCH}" WINEPREFIX="${WINEPREFIX}" wineboot --init >> "${WINE_RUNTIME_LOG:-${SERVER_DIR}/wine-runtime.log}" 2>&1 ||
+        fail "Falha ao inicializar o prefixo Wine. Consulte wine-runtime.log."
+elif [[ ! -d "${WINEPREFIX}/drive_c" ]]; then
+    fail "Prefixo Wine inconsistente: system.reg existe, mas drive_c esta ausente. Faça backup antes de recriar o prefixo."
+else
+    log "Prefixo Wine existente detectado; mantendo sua arquitetura original."
 fi
 
 validate_port() {
@@ -217,16 +231,25 @@ update_cfg_value() {
     local key="$1"
     local value="$2"
     local tmp_file
-    tmp_file="$(mktemp "${SERVER_CFG}.kv.XXXXXX")"
     local found=0
+    local lower_line lower_key
+    lower_key="${key,,}"
+    tmp_file="$(mktemp "${SERVER_CFG}.kv.XXXXXX")"
+
     while IFS= read -r line || [[ -n "${line}" ]]; do
-        if [[ "${line}" =~ ^[[:space:]]*${key}[[:space:]] ]]; then
-            printf '%s %s\n' "${key}" "${value}"
-            found=1
+        lower_line="${line,,}"
+        if [[ "${lower_line}" =~ ^[[:space:]]*${lower_key}[[:space:]] ]]; then
+            if (( found == 0 )); then
+                printf '%s %s\n' "${key}" "${value}"
+                found=1
+            else
+                warn "Removendo entrada duplicada de '${key}' no server.cfg."
+            fi
         else
             printf '%s\n' "${line}"
         fi
     done < "${SERVER_CFG}" > "${tmp_file}"
+
     if (( found == 0 )); then
         printf '%s %s\n' "${key}" "${value}" >> "${tmp_file}"
     fi
@@ -264,12 +287,13 @@ fi
 WINE_RUNTIME_LOG="${WINE_RUNTIME_LOG:-${SERVER_DIR}/wine-runtime.log}"
 : > "${SERVER_LOG}"
 touch "${WINE_RUNTIME_LOG}"
+log "Wine version: $(" ${WINE_BIN}" --version 2>/dev/null || printf 'indisponivel')"
 
 if ! command -v tail >/dev/null 2>&1; then
     fail "O comando tail (coreutils) e necessario para transmitir server_log.txt ao console."
 fi
 
-tail -n 0 -F --sleep-interval=0.2 -- "${SERVER_LOG}" &
+tail -n 0 -F --sleep-interval=1 -- "${SERVER_LOG}" &
 TAIL_PID=$!
 
 log "Iniciando SA-MP Windows via Wine..."
@@ -279,7 +303,7 @@ log "Log interno Wine: ${WINE_RUNTIME_LOG}"
 
 # Nao redirecionar a saida do Wine para SERVER_LOG: isso duplicaria as
 # mensagens que o proprio samp-server.exe ja grava nesse arquivo.
-WINEPREFIX="${WINEPREFIX}" WINEARCH="${WINEARCH}" wine "${SERVER_BIN}" >> "${WINE_RUNTIME_LOG}" 2>&1 &
+WINEPREFIX="${WINEPREFIX}" "${WINE_BIN}" "${SERVER_BIN}" >> "${WINE_RUNTIME_LOG}" 2>&1 &
 SERVER_PID=$!
 
 set +e
