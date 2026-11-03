@@ -6,7 +6,7 @@
   },
   "exported_at": "2026-11-02T00:00:00-03:00",
   "name": "SA-MP Windows via Wine",
-  "author": "Loxy Hosting",
+  "author": "suporte@loxyhosting.com",
   "description": "SA-MP Windows em Pterodactyl via Wine, com plugins .dll, suporte opcional ao SampVoice e inicializacao segura em ambiente Linux do panel.",
   "features": [],
   "docker_images": {
