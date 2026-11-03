@@ -259,24 +259,27 @@ else
     fi
 fi
 
-# Garante output do log para o console do Pterodactyl.
+# O SA-MP grava o log do jogo em SERVER_LOG. O stdout/stderr do Wine
+# vai para outro arquivo para nao misturar duas fontes no mesmo log/console.
+WINE_RUNTIME_LOG="${WINE_RUNTIME_LOG:-${SERVER_DIR}/wine-runtime.log}"
 : > "${SERVER_LOG}"
-if command -v tail >/dev/null 2>&1; then
-    tail -n 0 -F --sleep-interval=0.2 -- "${SERVER_LOG}" &
-    TAIL_PID=$!
-else
-    warn "tail nao foi encontrado; o console de Wine sera exibido diretamente sem streaming do server_log.txt."
+touch "${WINE_RUNTIME_LOG}"
+
+if ! command -v tail >/dev/null 2>&1; then
+    fail "O comando tail (coreutils) e necessario para transmitir server_log.txt ao console."
 fi
+
+tail -n 0 -F --sleep-interval=0.2 -- "${SERVER_LOG}" &
+TAIL_PID=$!
 
 log "Iniciando SA-MP Windows via Wine..."
 log "Prefixo Wine: ${WINEPREFIX}"
-log "Arquivo de log: ${SERVER_LOG}"
+log "Log SA-MP (console): ${SERVER_LOG}"
+log "Log interno Wine: ${WINE_RUNTIME_LOG}"
 
-if [[ -n "${TAIL_PID}" ]]; then
-    WINEPREFIX="${WINEPREFIX}" WINEARCH="${WINEARCH}" wine "${SERVER_BIN}" >> "${SERVER_LOG}" 2>&1 &
-else
-    WINEPREFIX="${WINEPREFIX}" WINEARCH="${WINEARCH}" wine "${SERVER_BIN}" 2>&1 | tee -a "${SERVER_LOG}" &
-fi
+# Nao redirecionar a saida do Wine para SERVER_LOG: isso duplicaria as
+# mensagens que o proprio samp-server.exe ja grava nesse arquivo.
+WINEPREFIX="${WINEPREFIX}" WINEARCH="${WINEARCH}" wine "${SERVER_BIN}" >> "${WINE_RUNTIME_LOG}" 2>&1 &
 SERVER_PID=$!
 
 set +e
