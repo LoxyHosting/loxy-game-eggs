@@ -5,9 +5,9 @@
     "update_url": null
   },
   "exported_at": "2026-11-02T00:00:00-03:00",
-  "name": "SA-MP Windows via Wine",
+  "name": "SA-MP Windows via Wine | Loxy Hosting",
   "author": "suporte@loxyhosting.com",
-  "description": "SA-MP Windows em Pterodactyl via Wine, com plugins .dll, suporte opcional ao SampVoice e inicializacao segura em ambiente Linux do panel.",
+  "description": "SA-MP Windows via Wine para Pterodactyl, com plugins .dll, suporte ao SA-MP Voice e inicializacao segura em ambiente Linux da Loxy Hosting.",
   "features": [],
   "docker_images": {
     "SA-MP Wine (recommended)": "ghcr.io/loxyhosting/samp-wine:stable"
@@ -15,7 +15,7 @@
   "file_denylist": [],
   "startup": "bash -o pipefail -c 'curl -fLsS --retry 3 --retry-delay 2 --connect-timeout 10 https://raw.githubusercontent.com/LoxyHosting/loxy-game-eggs/main/samp-wine.sh | bash'",
   "config": {
-    "files": "{\"server.cfg\":{\"parser\":\"file\",\"find\":{\"port\":\"port {{server.build.default.port}}\",\"maxplayers\":\"maxplayers {{server.build.env.MAX_PLAYERS}}\",\"hostname\":\"hostname {{server.build.env.SERVER_HOSTNAME}}\",\"announce\":\"announce {{server.build.env.ANNOUNCE}}\",\"query\":\"query {{server.build.env.QUERY}}\",\"rcon_password\":\"rcon_password {{server.build.env.RCON_PASSWORD}}\",\"password\":\"password {{server.build.env.SERVER_PASSWORD}}\",\"lanmode\":\"lanmode {{server.build.env.LAN}}\",\"rcon\":\"rcon {{server.build.env.RCON}}\"}}}",
+    "files": "{\"server.cfg\":{\"parser\":\"file\",\"find\":{\"port\":\"port {{server.build.default.port}}\",\"maxplayers\":\"maxplayers {{server.build.env.SAMP_MAX_PLAYERS}}\",\"hostname\":\"hostname {{server.build.env.SAMP_SERVER_HOSTNAME}}\",\"announce\":\"announce {{server.build.env.SAMP_ANNOUNCE}}\",\"query\":\"query {{server.build.env.SAMP_QUERY}}\",\"rcon_password\":\"rcon_password {{server.build.env.SAMP_RCON_PASSWORD}}\",\"password\":\"password {{server.build.env.SAMP_SERVER_PASSWORD}}\",\"lanmode\":\"lanmode {{server.build.env.SAMP_LAN}}\",\"rcon\":\"rcon {{server.build.env.SAMP_RCON}}\"}}}",
     "startup": "{\n  \"done\": \"Iniciando SA-MP Windows via Wine...\",\n  \"userInteraction\": []\n}",
     "logs": "{\n  \"custom\": true,\n  \"location\": \"server_log.txt\"\n}",
     "stop": "^C"
@@ -29,19 +29,9 @@
   },
   "variables": [
     {
-      "name": "Porta do servidor",
-      "description": "Porta UDP principal do servidor SA-MP Windows.",
-      "env_variable": "SERVER_PORT",
-      "default_value": "7777",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|integer|between:1,65535",
-      "field_type": "text"
-    },
-    {
       "name": "Maximo de jogadores",
       "description": "Quantidade maxima de jogadores permitida no servidor.",
-      "env_variable": "MAX_PLAYERS",
+      "env_variable": "SAMP_MAX_PLAYERS",
       "default_value": "50",
       "user_viewable": true,
       "user_editable": true,
@@ -51,7 +41,7 @@
     {
       "name": "Nome do servidor",
       "description": "Nome do servidor exibido ao cliente SA-MP.",
-      "env_variable": "SERVER_HOSTNAME",
+      "env_variable": "SAMP_SERVER_HOSTNAME",
       "default_value": "Loxy Hosting SA-MP Windows",
       "user_viewable": true,
       "user_editable": true,
@@ -61,7 +51,7 @@
     {
       "name": "Senha do RCON",
       "description": "Senha de administracao para RCON.",
-      "env_variable": "RCON_PASSWORD",
+      "env_variable": "SAMP_RCON_PASSWORD",
       "default_value": "changeMe",
       "user_viewable": true,
       "user_editable": true,
@@ -69,19 +59,9 @@
       "field_type": "text"
     },
     {
-      "name": "Senha de entrada",
-      "description": "Senha opcional para acesso ao servidor.",
-      "env_variable": "SERVER_PASSWORD",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:64",
-      "field_type": "text"
-    },
-    {
       "name": "Anunciar servidor",
       "description": "Habilita a listagem publica do servidor.",
-      "env_variable": "ANNOUNCE",
+      "env_variable": "SAMP_ANNOUNCE",
       "default_value": "1",
       "user_viewable": true,
       "user_editable": true,
@@ -91,27 +71,7 @@
     {
       "name": "Consulta de servidor",
       "description": "Habilita a consulta de informacoes do SA-MP.",
-      "env_variable": "QUERY",
-      "default_value": "1",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|numeric|in:0,1",
-      "field_type": "text"
-    },
-    {
-      "name": "LAN mode",
-      "description": "Define se o servidor deve operar em modo LAN.",
-      "env_variable": "LAN",
-      "default_value": "0",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|numeric|in:0,1",
-      "field_type": "text"
-    },
-    {
-      "name": "RCON habilitado",
-      "description": "Liga ou desliga a funcionalidade de RCON.",
-      "env_variable": "RCON",
+      "env_variable": "SAMP_QUERY",
       "default_value": "1",
       "user_viewable": true,
       "user_editable": true,
@@ -131,21 +91,11 @@
     {
       "name": "VOIP_PORT",
       "description": "Porta UDP do plugin SA-MP Voice. Use 0 para nao configurar sv_port.",
-      "env_variable": "VOIP_PORT",
+      "env_variable": "SAMP_VOIP_PORT",
       "default_value": "0",
       "user_viewable": true,
       "user_editable": true,
       "rules": "required|integer|between:0,65535",
-      "field_type": "text"
-    },
-    {
-      "name": "SAMPVOICE_URL",
-      "description": "Variavel mantida apenas para compatibilidade. A Egg nao baixa o plugin automaticamente; o DLL deve ser instalado manualmente na pasta plugins/.",
-      "env_variable": "SAMPVOICE_URL",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string|max:512",
       "field_type": "text"
     }
   ]
