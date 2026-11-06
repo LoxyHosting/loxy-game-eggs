@@ -33,8 +33,14 @@ if [[ -f "${CONFIG_FILE}" && -n "${SERVER_NAME:-}" ]]; then
 fi
 
 # Acelerador opcional.
+# Nao inicia quando o motor FastDL gerenciado da Loxy esta ativo no servidor
+# (LOXY_FASTDL_ACTIVE=1): nesse modo os downloads saem pelo motor FastDL
+# (https://br-02.loxy.host/fastdl/<uuid> via <httpdownloadurl>) e o acelerador
+# legado so consumiria porta e memoria. Fora do FastDL, comportamento antigo.
 # So inicia quando EXPRESS_PORT for uma porta valida.
-if [[ "${EXPRESS_PORT:-}" =~ ^[0-9]+$ ]] \
+if [[ "${LOXY_FASTDL_ACTIVE:-}" == "1" ]]; then
+    echo "[ACCELERATOR] Desativado: FastDL Loxy gerenciado ativo (LOXY_FASTDL_ACTIVE=1)."
+elif [[ "${EXPRESS_PORT:-}" =~ ^[0-9]+$ ]] \
     && (( EXPRESS_PORT >= 1 && EXPRESS_PORT <= 65535 )); then
 
     echo "[ACCELERATOR] Porta configurada: ${EXPRESS_PORT}"
